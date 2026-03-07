@@ -53,6 +53,15 @@
 
 **Goal:** Build YAML/JSON-based task orchestration system that allows users to define automation workflows without code changes.
 
+**Status:** ○ In Progress (1/3 plans)
+
+**Plans:**
+| Plan | Name | Status | Requirements |
+|------|------|--------|--------------|
+| 01 | YAML Configuration Foundation | Complete | CFG-01, CFG-03 |
+| 02 | Workflow Executor | Not Started | CFG-02 |
+| 03 | Conditional Logic | Not Started | CFG-04 |
+
 **Requirements:**
 - CFG-01: System loads task definitions from YAML configuration files
 - CFG-02: System executes multi-step workflows defined in configuration

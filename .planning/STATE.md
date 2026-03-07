@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 2
-current_plan: Not started
-status: planning
-last_updated: "2026-03-07T10:35:47.113Z"
+current_plan: 01
+status: executing
+last_updated: "2026-03-07T10:45:00Z"
 progress:
   total_phases: 5
   completed_phases: 1
@@ -17,8 +17,8 @@ progress:
 
 **Initialized:** 2026-03-07
 **Current Phase:** 2
-**Current Plan:** Not started
-**Status:** Ready to plan
+**Current Plan:** 01
+**Status:** In Progress
 
 ---
 
@@ -29,7 +29,8 @@ Phase 1: Character Detection Core      ✓ Complete (3/3 plans)
   Plan 01: Contracts and Persistence   ✓ Complete
   Plan 02: Vision Engine Integration   ✓ Complete
   Plan 03: Account Indexing and Cache  ✓ Complete
-Phase 2: Configuration System          ○ Not started
+Phase 2: Configuration System          ○ In Progress
+  Plan 01: YAML Configuration Foundation ○ In Progress
 Phase 3: Intelligent Wait System       ○ Not started
 Phase 4: Error Recovery & ACE          ○ Not started
 Phase 5: Performance & Multi-Account   ○ Not started
@@ -51,8 +52,8 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 
 ## Active Context
 
-**Last Action:** Completed Plan 01-03: Account Indexing and Screenshot Cache
-**Next Action:** Begin Phase 2: Configuration System
+**Last Action:** Completed Plan 02-01: YAML Configuration Foundation
+**Next Action:** Continue Phase 2: Configuration System
 
 **Blockers:** None
 
@@ -60,12 +61,12 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 - Plan 01-01 completed with 14 passing tests
 - Plan 01-02 completed with 19 additional tests (33 total)
 - Plan 01-03 completed with 16 additional tests (49 total)
-- CharacterDetector now has full discovery traversal behavior
-- vision_engine.py provides template matching primitives
-- Account indexing with SHA-256 identity implemented
-- Screenshot cache at data/accounts/{hash}/characters/{slot}.png
-- gui_launcher.py integrates discovery before automation
-- Phase 1 complete - ready for Phase 2: Configuration System
+- Plan 02-01 completed with 23 new tests (72 total)
+- YAML configuration system with Pydantic v2 validation implemented
+- Workflow schema supports click/wait/press/scroll actions
+- Compile-time validation catches dangling references
+- Phase 1 complete
+- Phase 2 in progress (1/3 plans complete)
 
 ---
 
@@ -73,6 +74,11 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 
 | Date | Decision | Context |
 |------|----------|---------|
+| 2026-03-07 | Pydantic v2 discriminated unions for action types | Type-safe workflow schema |
+| 2026-03-07 | YAML-only loading with yaml.safe_load | Security and simplicity |
+| 2026-03-07 | Separate schema validation from semantic compilation | Clean architecture |
+| 2026-03-07 | Explicit step_id required for every step | Workflow determinism |
+| 2026-03-07 | Conditional branching via on_true/on_false fields | Branching semantics |
 | 2026-03-07 | ROI constants locked to 2560x1440 | Phase context specification |
 | 2026-03-07 | TM_CCOEFF_NORMED matching enforced | Locked phase decision |
 | 2026-03-07 | Slot threshold >=0.8 with 3 retries | Locked phase decision |
@@ -93,6 +99,7 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 | Phase | Started | Completed | Duration | Notes |
 |-------|---------|-----------|----------|-------|
 | 1 | 2026-03-07 | 2026-03-07 | 60 min | All 3 plans complete |
+| 2 | 2026-03-07 | - | - | In progress (1/3 plans) |
 
 ---
 
@@ -103,7 +110,8 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 | 01 | 01 | 15 min | 3 | 3 |
 | 01 | 02 | 25 min | 3 | 3 |
 | 01 | 03 | 20 min | 3 | 3 |
+| 02 | 01 | 5 min | 2 | 4 |
 
 ---
 
-*State updated: 2026-03-07 after completing 01-03 (Phase 1 complete)*
+*State updated: 2026-03-07 after completing 02-01 (Phase 2 in progress)*
