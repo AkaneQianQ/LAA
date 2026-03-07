@@ -3,12 +3,18 @@
 #
 # This workflow demonstrates:
 # - Explicit step IDs and next links
-# - All action types: click, wait, press, scroll
+# - All action types: click, wait, press, scroll, wait_image
 # - Conditional branching with image detection
 # - Loop path for character iteration
+# - Intelligent image-based waits replacing hardcoded delays
 
 name: guild_donation
 start_step_id: open_guild_menu
+
+wait_defaults:
+  timeout_ms: 10000
+  poll_interval_ms: 50
+  retry_interval_ms: 1000
 
 steps:
   # Step 1: Open guild menu with Alt+U
@@ -16,96 +22,96 @@ steps:
     action:
       type: press
       key_name: alt+u
-    next: wait_menu_load
+    next: wait_menu_appear
     retry: 1
 
-  # Step 2: Wait for menu to load
-  - step_id: wait_menu_load
+  # Step 2: Wait for guild menu to appear (intelligent wait)
+  - step_id: wait_menu_appear
     action:
-      type: wait
-      duration_ms: 500
-    next: check_menu_open
-
-  # Step 3: Check if guild menu is open (conditional branch)
-  - step_id: check_menu_open
-    action:
-      type: wait
-      duration_ms: 100
-    on_true: click_donate_tab
-    on_false: retry_open_menu
-    condition:
-      type: image
-      template: assets/guild_flag_mark.png
+      type: wait_image
+      state: appear
+      image: guild_flag_mark.png
       roi: [1000, 200, 1600, 400]
-      threshold: 0.8
+      timeout_ms: 5000
+      poll_interval_ms: 100
+    next: click_donate_tab
 
-  # Step 4a: Menu not open, retry (loop back)
-  - step_id: retry_open_menu
-    action:
-      type: wait
-      duration_ms: 200
-    next: open_guild_menu
-
-  # Step 4b: Menu open, click donation tab
+  # Step 3: Click donation tab
   - step_id: click_donate_tab
     action:
       type: click
       x: 1200
       y: 600
-    next: wait_donation_ui
+    next: wait_donation_ui_appear
 
-  # Step 5: Wait for donation UI
-  - step_id: wait_donation_ui
+  # Step 4: Wait for donation UI to appear
+  - step_id: wait_donation_ui_appear
     action:
-      type: wait
-      duration_ms: 300
+      type: wait_image
+      state: appear
+      image: btn_silver_donate.png
+      roi: [1100, 750, 1500, 850]
+      timeout_ms: 3000
+      poll_interval_ms: 100
     next: click_silver_donate
 
-  # Step 6: Click silver donation button
+  # Step 5: Click silver donation button
   - step_id: click_silver_donate
     action:
       type: click
       x: 1300
       y: 800
-    next: wait_confirm
+    next: wait_confirm_appear
 
-  # Step 7: Wait for confirmation dialog
-  - step_id: wait_confirm
+  # Step 6: Wait for confirmation dialog to appear
+  - step_id: wait_confirm_appear
     action:
-      type: wait
-      duration_ms: 200
+      type: wait_image
+      state: appear
+      image: daily_confirm_btn.png
+      roi: [1200, 850, 1500, 950]
+      timeout_ms: 3000
+      poll_interval_ms: 100
     next: click_confirm
 
-  # Step 8: Click confirm button
+  # Step 7: Click confirm button
   - step_id: click_confirm
     action:
       type: click
       x: 1350
       y: 900
-    next: wait_donation_complete
+    next: wait_confirm_disappear
 
-  # Step 9: Wait for donation to complete
-  - step_id: wait_donation_complete
+  # Step 8: Wait for confirmation dialog to disappear (donation complete)
+  - step_id: wait_confirm_disappear
     action:
-      type: wait
-      duration_ms: 500
+      type: wait_image
+      state: disappear
+      image: daily_confirm_btn.png
+      roi: [1200, 850, 1500, 950]
+      timeout_ms: 5000
+      poll_interval_ms: 100
     next: close_menu
 
-  # Step 10: Close guild menu with ESC
+  # Step 9: Close guild menu with ESC
   - step_id: close_menu
     action:
       type: press
       key_name: esc
-    next: wait_menu_close
+    next: wait_menu_disappear
 
-  # Step 11: Wait for menu to close
-  - step_id: wait_menu_close
+  # Step 10: Wait for menu to disappear
+  - step_id: wait_menu_disappear
     action:
-      type: wait
-      duration_ms: 300
+      type: wait_image
+      state: disappear
+      image: guild_flag_mark.png
+      roi: [1000, 200, 1600, 400]
+      timeout_ms: 3000
+      poll_interval_ms: 100
     next: check_next_character
 
-  # Step 12: Check if there are more characters to process
+  # Step 11: Check if there are more characters to process
   - step_id: check_next_character
     action:
       type: wait
@@ -118,44 +124,52 @@ steps:
       roi: [500, 850, 950, 1000]
       threshold: 0.8
 
-  # Step 13a: More characters, scroll to next
+  # Step 12a: More characters, scroll to next
   - step_id: scroll_to_next
     action:
       type: scroll
       direction: down
       ticks: 1
-    next: wait_scroll
+    next: wait_scroll_complete
 
-  # Step 13b: No more characters, workflow complete
+  # Step 12b: No more characters, workflow complete
   - step_id: workflow_complete
     action:
       type: wait
       duration_ms: 100
     next: null
 
-  # Step 14: Wait after scroll
-  - step_id: wait_scroll
+  # Step 13: Wait after scroll using intelligent wait for UI stability
+  - step_id: wait_scroll_complete
     action:
-      type: wait
-      duration_ms: 200
+      type: wait_image
+      state: appear
+      image: btn_quick_switch.png
+      roi: [500, 850, 950, 1000]
+      timeout_ms: 2000
+      poll_interval_ms: 100
     next: click_next_character
 
-  # Step 15: Click next character slot
+  # Step 14: Click next character slot
   - step_id: click_next_character
     action:
       type: click
       x: 1100
       y: 650
-    next: wait_character_select
+    next: wait_character_select_appear
 
-  # Step 16: Wait for character selection
-  - step_id: wait_character_select
+  # Step 15: Wait for character selection screen
+  - step_id: wait_character_select_appear
     action:
-      type: wait
-      duration_ms: 800
+      type: wait_image
+      state: appear
+      image: btn_login_yellow.png
+      roi: [1200, 880, 1700, 960]
+      timeout_ms: 5000
+      poll_interval_ms: 100
     next: click_login
 
-  # Step 17: Click login button
+  # Step 16: Click login button
   - step_id: click_login
     action:
       type: click
@@ -163,9 +177,13 @@ steps:
       y: 920
     next: wait_login_complete
 
-  # Step 18: Wait for login to complete
+  # Step 17: Wait for login to complete (character switch)
   - step_id: wait_login_complete
     action:
-      type: wait
-      duration_ms: 2000
+      type: wait_image
+      state: disappear
+      image: btn_login_yellow.png
+      roi: [1200, 880, 1700, 960]
+      timeout_ms: 10000
+      poll_interval_ms: 200
     next: open_guild_menu
