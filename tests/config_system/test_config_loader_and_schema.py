@@ -574,5 +574,349 @@ steps:
             load_workflow_config(str(yaml_file))
 
 
+class TestWaitImageSchema:
+    """Validate intelligent wait image schema contracts (WAIT-01, WAIT-02, WAIT-03)."""
+
+    def test_wait_image_accepts_appear_state(self):
+        """wait_image accepts state=appear with required image condition fields."""
+        from core.workflow_schema import WorkflowConfig
+
+        config = {
+            'name': 'test_workflow',
+            'start_step_id': 'step1',
+            'steps': [
+                {
+                    'step_id': 'step1',
+                    'action': {
+                        'type': 'wait_image',
+                        'state': 'appear',
+                        'image': 'btn_login.png',
+                        'roi': [100, 200, 300, 400]
+                    },
+                    'next': None
+                }
+            ]
+        }
+
+        workflow = WorkflowConfig.model_validate(config)
+        assert workflow.steps[0].action.state == 'appear'
+        assert workflow.steps[0].action.image == 'btn_login.png'
+        assert workflow.steps[0].action.roi == (100, 200, 300, 400)
+
+    def test_wait_image_accepts_disappear_state(self):
+        """wait_image accepts state=disappear for waiting until image disappears."""
+        from core.workflow_schema import WorkflowConfig
+
+        config = {
+            'name': 'test_workflow',
+            'start_step_id': 'step1',
+            'steps': [
+                {
+                    'step_id': 'step1',
+                    'action': {
+                        'type': 'wait_image',
+                        'state': 'disappear',
+                        'image': 'loading_spinner.png',
+                        'roi': [500, 600, 700, 800]
+                    },
+                    'next': None
+                }
+            ]
+        }
+
+        workflow = WorkflowConfig.model_validate(config)
+        assert workflow.steps[0].action.state == 'disappear'
+        assert workflow.steps[0].action.image == 'loading_spinner.png'
+
+    def test_wait_image_rejects_invalid_state(self):
+        """wait_image rejects invalid state values."""
+        from core.workflow_schema import WorkflowConfig
+        from pydantic import ValidationError
+
+        invalid_config = {
+            'name': 'test_workflow',
+            'start_step_id': 'step1',
+            'steps': [
+                {
+                    'step_id': 'step1',
+                    'action': {
+                        'type': 'wait_image',
+                        'state': 'invalid_state',
+                        'image': 'btn_login.png',
+                        'roi': [100, 200, 300, 400]
+                    },
+                    'next': None
+                }
+            ]
+        }
+
+        with pytest.raises(ValidationError) as exc_info:
+            WorkflowConfig.model_validate(invalid_config)
+
+        assert 'state' in str(exc_info.value)
+
+    def test_wait_image_requires_image_field(self):
+        """wait_image requires image field for template matching."""
+        from core.workflow_schema import WorkflowConfig
+        from pydantic import ValidationError
+
+        invalid_config = {
+            'name': 'test_workflow',
+            'start_step_id': 'step1',
+            'steps': [
+                {
+                    'step_id': 'step1',
+                    'action': {
+                        'type': 'wait_image',
+                        'state': 'appear'
+                        # Missing image field
+                    },
+                    'next': None
+                }
+            ]
+        }
+
+        with pytest.raises(ValidationError) as exc_info:
+            WorkflowConfig.model_validate(invalid_config)
+
+        assert 'image' in str(exc_info.value)
+
+    def test_wait_image_requires_roi_field(self):
+        """wait_image requires roi field for search region."""
+        from core.workflow_schema import WorkflowConfig
+        from pydantic import ValidationError
+
+        invalid_config = {
+            'name': 'test_workflow',
+            'start_step_id': 'step1',
+            'steps': [
+                {
+                    'step_id': 'step1',
+                    'action': {
+                        'type': 'wait_image',
+                        'state': 'appear',
+                        'image': 'btn_login.png'
+                        # Missing roi field
+                    },
+                    'next': None
+                }
+            ]
+        }
+
+        with pytest.raises(ValidationError) as exc_info:
+            WorkflowConfig.model_validate(invalid_config)
+
+        assert 'roi' in str(exc_info.value)
+
+    def test_legacy_wait_action_remains_valid(self):
+        """Existing wait(duration_ms) action remains valid for backward compatibility."""
+        from core.workflow_schema import WorkflowConfig
+
+        config = {
+            'name': 'test_workflow',
+            'start_step_id': 'step1',
+            'steps': [
+                {
+                    'step_id': 'step1',
+                    'action': {'type': 'wait', 'duration_ms': 1000},
+                    'next': None
+                }
+            ]
+        }
+
+        workflow = WorkflowConfig.model_validate(config)
+        assert workflow.steps[0].action.type == 'wait'
+        assert workflow.steps[0].action.duration_ms == 1000
+
+
+class TestWaitDefaultsAndOverrides:
+    """Validate workflow-level wait defaults and per-step override semantics."""
+
+    def test_workflow_level_wait_defaults(self):
+        """Workflow config supports global wait defaults for timeout/poll/retry."""
+        from core.workflow_schema import WorkflowConfig
+
+        config = {
+            'name': 'test_workflow',
+            'start_step_id': 'step1',
+            'wait_defaults': {
+                'timeout_ms': 5000,
+                'poll_interval_ms': 100,
+                'retry_interval_ms': 500
+            },
+            'steps': [
+                {
+                    'step_id': 'step1',
+                    'action': {'type': 'wait', 'duration_ms': 1000},
+                    'next': None
+                }
+            ]
+        }
+
+        workflow = WorkflowConfig.model_validate(config)
+        assert workflow.wait_defaults.timeout_ms == 5000
+        assert workflow.wait_defaults.poll_interval_ms == 100
+        assert workflow.wait_defaults.retry_interval_ms == 500
+
+    def test_wait_defaults_use_standard_values_when_not_specified(self):
+        """Wait defaults use sensible standard values when not specified."""
+        from core.workflow_schema import WorkflowConfig
+
+        config = {
+            'name': 'test_workflow',
+            'start_step_id': 'step1',
+            'steps': [
+                {
+                    'step_id': 'step1',
+                    'action': {'type': 'wait', 'duration_ms': 1000},
+                    'next': None
+                }
+            ]
+        }
+
+        workflow = WorkflowConfig.model_validate(config)
+        # Should have default values
+        assert workflow.wait_defaults.timeout_ms == 10000  # 10s default
+        assert workflow.wait_defaults.poll_interval_ms == 50  # 50ms default
+        assert workflow.wait_defaults.retry_interval_ms == 1000  # 1s default
+
+    def test_step_level_retry_interval_override(self):
+        """Step-level retry_interval_ms overrides workflow default."""
+        from core.workflow_schema import WorkflowConfig
+
+        config = {
+            'name': 'test_workflow',
+            'start_step_id': 'step1',
+            'wait_defaults': {
+                'timeout_ms': 5000,
+                'retry_interval_ms': 1000
+            },
+            'steps': [
+                {
+                    'step_id': 'step1',
+                    'action': {'type': 'wait', 'duration_ms': 100},
+                    'retry': 3,
+                    'retry_interval_ms': 200,  # Override default
+                    'next': None
+                }
+            ]
+        }
+
+        workflow = WorkflowConfig.model_validate(config)
+        assert workflow.steps[0].retry_interval_ms == 200
+        # Workflow default still accessible
+        assert workflow.wait_defaults.retry_interval_ms == 1000
+
+    def test_wait_image_with_timeout_override(self):
+        """wait_image action can override timeout at action level."""
+        from core.workflow_schema import WorkflowConfig
+
+        config = {
+            'name': 'test_workflow',
+            'start_step_id': 'step1',
+            'wait_defaults': {
+                'timeout_ms': 10000
+            },
+            'steps': [
+                {
+                    'step_id': 'step1',
+                    'action': {
+                        'type': 'wait_image',
+                        'state': 'appear',
+                        'image': 'btn_login.png',
+                        'roi': [100, 200, 300, 400],
+                        'timeout_ms': 3000  # Override default
+                    },
+                    'next': None
+                }
+            ]
+        }
+
+        workflow = WorkflowConfig.model_validate(config)
+        assert workflow.steps[0].action.timeout_ms == 3000
+        assert workflow.wait_defaults.timeout_ms == 10000
+
+
+class TestWaitImageValidationEdgeCases:
+    """Edge case validation for wait_image constraints."""
+
+    def test_wait_image_roi_must_be_four_integers(self):
+        """ROI must be a tuple/list of exactly 4 integers."""
+        from core.workflow_schema import WorkflowConfig
+        from pydantic import ValidationError
+
+        invalid_config = {
+            'name': 'test_workflow',
+            'start_step_id': 'step1',
+            'steps': [
+                {
+                    'step_id': 'step1',
+                    'action': {
+                        'type': 'wait_image',
+                        'state': 'appear',
+                        'image': 'btn.png',
+                        'roi': [100, 200]  # Only 2 values
+                    },
+                    'next': None
+                }
+            ]
+        }
+
+        with pytest.raises(ValidationError):
+            WorkflowConfig.model_validate(invalid_config)
+
+    def test_wait_image_timeout_must_be_positive(self):
+        """wait_image timeout_ms must be positive."""
+        from core.workflow_schema import WorkflowConfig
+        from pydantic import ValidationError
+
+        invalid_config = {
+            'name': 'test_workflow',
+            'start_step_id': 'step1',
+            'steps': [
+                {
+                    'step_id': 'step1',
+                    'action': {
+                        'type': 'wait_image',
+                        'state': 'appear',
+                        'image': 'btn.png',
+                        'roi': [100, 200, 300, 400],
+                        'timeout_ms': -1
+                    },
+                    'next': None
+                }
+            ]
+        }
+
+        with pytest.raises(ValidationError):
+            WorkflowConfig.model_validate(invalid_config)
+
+    def test_wait_image_poll_interval_must_be_positive(self):
+        """wait_image poll_interval_ms must be positive."""
+        from core.workflow_schema import WorkflowConfig
+        from pydantic import ValidationError
+
+        invalid_config = {
+            'name': 'test_workflow',
+            'start_step_id': 'step1',
+            'steps': [
+                {
+                    'step_id': 'step1',
+                    'action': {
+                        'type': 'wait_image',
+                        'state': 'appear',
+                        'image': 'btn.png',
+                        'roi': [100, 200, 300, 400],
+                        'poll_interval_ms': 0
+                    },
+                    'next': None
+                }
+            ]
+        }
+
+        with pytest.raises(ValidationError):
+            WorkflowConfig.model_validate(invalid_config)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

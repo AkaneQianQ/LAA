@@ -62,8 +62,69 @@ class ScrollAction(BaseModel):
     )
 
 
+class WaitImageAction(BaseModel):
+    """
+    Intelligent wait action based on image appearance/disappearance.
+
+    Replaces hardcoded sleep with state-driven waits for UI synchronization.
+    Supports both 'appear' (wait for image to show) and 'disappear' (wait for image to hide).
+    """
+    type: Literal["wait_image"]
+    state: Literal["appear", "disappear"] = Field(
+        ...,
+        description="Wait condition: 'appear' waits for image to appear, 'disappear' waits for it to vanish"
+    )
+    image: str = Field(
+        ...,
+        min_length=1,
+        description="Template image filename for matching (e.g., 'btn_login.png')"
+    )
+    roi: Tuple[int, int, int, int] = Field(
+        ...,
+        description="Region of interest as (x1, y1, x2, y2) for template matching"
+    )
+    timeout_ms: Optional[int] = Field(
+        None,
+        ge=1,
+        description="Override timeout in milliseconds (uses workflow default if not set)"
+    )
+    poll_interval_ms: Optional[int] = Field(
+        None,
+        ge=1,
+        description="Override polling interval in milliseconds (uses workflow default if not set)"
+    )
+
+
 # Discriminated union for all action types
-ActionConfig = Union[ClickAction, WaitAction, PressAction, ScrollAction]
+ActionConfig = Union[ClickAction, WaitAction, PressAction, ScrollAction, WaitImageAction]
+
+
+# =============================================================================
+# WAIT DEFAULTS MODEL
+# =============================================================================
+
+class WaitDefaults(BaseModel):
+    """
+    Global wait configuration defaults for a workflow.
+
+    Provides tiered timeout/poll/retry settings that can be overridden
+    at the step or action level. Uses sensible defaults for typical automation.
+    """
+    timeout_ms: int = Field(
+        10000,
+        ge=1,
+        description="Default timeout for wait operations in milliseconds (default: 10s)"
+    )
+    poll_interval_ms: int = Field(
+        50,
+        ge=1,
+        description="Default polling interval for image checks in milliseconds (default: 50ms)"
+    )
+    retry_interval_ms: int = Field(
+        1000,
+        ge=0,
+        description="Default interval between retry attempts in milliseconds (default: 1s)"
+    )
 
 
 # =============================================================================
@@ -108,6 +169,11 @@ class WorkflowStep(BaseModel):
         0,
         ge=0,
         description="Number of retry attempts on failure (0 = no retries)"
+    )
+    retry_interval_ms: Optional[int] = Field(
+        None,
+        ge=0,
+        description="Override retry interval in milliseconds (uses workflow default if not set)"
     )
     # Condition configuration for branching
     condition: Optional[dict] = Field(
@@ -155,6 +221,10 @@ class WorkflowConfig(BaseModel):
         ...,
         min_length=1,
         description="List of workflow steps"
+    )
+    wait_defaults: WaitDefaults = Field(
+        default_factory=WaitDefaults,
+        description="Global wait configuration defaults with per-step override support"
     )
 
     @model_validator(mode='after')
