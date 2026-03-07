@@ -272,7 +272,7 @@ Plans:
 - REQ-INT-03: End-to-end testing capability
 
 **Depends on:** Phase 6
-**Plans:** 4 plans (2 waves)
+**Plans:** 4/4 plans complete
 
 | Plan | Name | Wave | Depends On |
 |------|------|------|------------|
