@@ -8,9 +8,10 @@ Exports:
     WorkflowConfig: Top-level workflow configuration model
     WorkflowStep: Individual step with action and routing
     ActionConfig: Discriminated union of all action types
+    RecoveryConfig: Step-level recovery and audit configuration
 """
 
-from typing import Literal, Optional, Union, Tuple, List
+from typing import Literal, Optional, Union, Tuple, List, Dict, Any
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -100,6 +101,37 @@ ActionConfig = Union[ClickAction, WaitAction, PressAction, ScrollAction, WaitIma
 
 
 # =============================================================================
+# RECOVERY CONFIG MODEL
+# =============================================================================
+
+class RecoveryConfig(BaseModel):
+    """
+    Step-level recovery and audit configuration.
+
+    Defines error recovery behavior for workflow steps, including anchor markers,
+    timeout rollback targets, escalation limits, and optional audit context.
+    This enables deterministic recovery logic that can be validated at compile time.
+    """
+    anchor: bool = Field(
+        False,
+        description="If True, this step is a stable recovery anchor point"
+    )
+    on_timeout: Optional[str] = Field(
+        None,
+        description="Step ID to rollback to when timeout occurs (must reference an anchor)"
+    )
+    max_escalations: int = Field(
+        3,
+        ge=0,
+        description="Maximum number of recovery escalations before session-level failure"
+    )
+    audit_context: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Optional audit metadata for error logging and debugging"
+    )
+
+
+# =============================================================================
 # WAIT DEFAULTS MODEL
 # =============================================================================
 
@@ -179,6 +211,11 @@ class WorkflowStep(BaseModel):
     condition: Optional[dict] = Field(
         None,
         description="Condition configuration for conditional branching"
+    )
+    # Recovery configuration
+    recovery: RecoveryConfig = Field(
+        default_factory=RecoveryConfig,
+        description="Recovery and audit configuration for error handling"
     )
 
     @model_validator(mode='after')
