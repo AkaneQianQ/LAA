@@ -22,6 +22,15 @@
 
 **Goal:** Implement automatic character discovery using pure image template matching, eliminating OCR dependency and manual character count input.
 
+**Status:** In Progress (Plan 01/03 complete)
+
+**Plans:**
+| Plan | Name | Status | Requirements |
+|------|------|--------|--------------|
+| 01 | Contracts and Persistence Foundation | ✓ Complete | CHAR-01, CHAR-02 |
+| 02 | Vision Engine Integration | ○ Not started | CHAR-01, CHAR-02 |
+| 03 | Discovery Workflow | ○ Not started | CHAR-03, CHAR-04, CHAR-05 |
+
 **Requirements:**
 - CHAR-01: System detects ESC menu opening via template matching
 - CHAR-02: System identifies 9 character slot ROIs using pure image matching
