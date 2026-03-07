@@ -3,66 +3,21 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 5
-current_plan: 01
+current_plan: 05
 status: executing
-last_updated: "2026-03-07T16:15:00Z"
+last_updated: "2026-03-08T16:15:00Z"
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 16
-  completed_plans: 14
----
-
----
-gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: milestone
-current_phase: 4
-current_plan: 01
-status: executing
-last_updated: "2026-03-07T15:44:00Z"
-progress:
-  total_phases: 5
-  completed_phases: 3
-  total_plans: 6
-  completed_plans: 1
----
-
----
-gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: milestone
-current_phase: 3
-current_plan: 01
-status: executing
-last_updated: "2026-03-07T12:38:00Z"
-progress:
-  total_phases: 5
-  completed_phases: 2
-  total_plans: 3
-  completed_plans: 1
----
-
----
-gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: milestone
-current_phase: 2
-current_plan: 03
-status: executing
-last_updated: "2026-03-07T11:37:00Z"
-progress:
-  total_phases: 5
-  completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  completed_plans: 15
 ---
 
 # Project State: LostarkGuildDonationBot
 
 **Initialized:** 2026-03-07
 **Current Phase:** 5
-**Current Plan:** Not started
+**Current Plan:** 05
 **Status:** Ready to plan
 
 ---
@@ -82,19 +37,19 @@ Phase 3: Intelligent Wait System       ✓ Complete (3/3 plans)
   Plan 01: Schema Contracts            ✓ Complete
   Plan 02: Wait Image Runtime          ✓ Complete
   Plan 03: Guild Workflow Migration    ✓ Complete
-Phase 4: Error Recovery & ACE          ○ In Progress (3/6 plans)
+Phase 4: Error Recovery & ACE          ✓ Complete (3/3 plans)
   Plan 01: Recovery Contracts Schema   ✓ Complete
   Plan 02: Runtime Recovery & Logging  ✓ Complete
   Plan 03: ACE Compliance Guard        ✓ Complete
-Phase 5: Performance & Multi-Account   ○ In Progress (3/4 plans)
+Phase 5: Performance & Multi-Account   ○ In Progress (4/4 plans)
   Plan 01: Frame Cache with TTL         ✓ Complete
   Plan 02: Parallel ROI Matching        ✓ Complete
-  Plan 03: Account Management           ✓ Complete
+  Plan 03: Account Manager & Progress   ✓ Complete
+  Plan 04: Account Switching            ✓ Complete
 ```
 
-**Overall:** 0/5 phases complete (0%)
-**Phase 1:** 3/3 plans complete (100%)
-**Phase 2:** 3/3 plans complete (100%)
+**Overall:** 4/5 phases complete (80%)
+**Phase 5:** 4/4 plans complete (100%)
 
 ---
 
@@ -103,71 +58,22 @@ Phase 5: Performance & Multi-Account   ○ In Progress (3/4 plans)
 See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 
 **Core value:** Zero-config multi-account automation with XIGNCODE3-friendly pure Python interactions
-**Current focus:** Phase 4 — Error Recovery & XIGNCODE3 Compliance
+**Current focus:** Phase 5 complete - Performance & Multi-Account
 
 ---
 
 ## Active Context
 
-**Last Action:** Completed Plan 05-03: Account Management and Progress Persistence
-**Next Action:** Continue with Plan 05-04 (if exists)
+**Last Action:** Completed Plan 05-04: Account Switching & SPEED-03 Verification
+**Next Action:** Phase 5 complete - ready for verification
 
 **Blockers:** None
 
 **Notes:**
-- Plan 01-01 completed with 14 passing tests
-- Plan 01-02 completed with 19 additional tests (33 total)
-- Plan 01-03 completed with 16 additional tests (49 total)
-- Plan 02-01 completed with 23 new tests (72 total)
-- YAML configuration system with Pydantic v2 validation implemented
-- Workflow schema supports click/wait/press/scroll actions
-- Compile-time validation catches dangling references
-- Phase 1 complete
-- Phase 2 complete (3/3 plans)
-- Plan 02-02 completed with 15 new tests (87 total)
-- Plan 02-03 completed with 16 new tests (103 total)
-- Workflow executor with deterministic step traversal
-- Action dispatcher for click/wait/press/scroll
-- Condition evaluator using vision engine
-- Loop safety guard at 1000 steps
-- Workflow bootstrap module with create_workflow_executor()
-- Guild donation YAML workflow with 18 steps
-- Launcher integration with config-driven automation
-- Stoppable controller with stop_event checking
-- Plan 03-01 completed with 16 new tests (119 total)
-- WaitImageAction schema with appear/disappear states
-- WaitDefaults model for global timeout/poll/retry configuration
-- Step-level retry_interval_ms override support
-- Backward compatibility preserved for legacy wait actions
-- Plan 03-02 completed with 9 new tests (125 total)
-- wait_image runtime with 2-hit stability gating
-- Executor retry interval with step-level override
-- Timeout errors flow through executor retry lifecycle
-- Plan 03-03 completed with 21 new tests (146 total)
-- Guild donation workflow migrated to wait_image actions
-- 7 wait_image steps with 4 appear and 3 disappear states
-- Sleep inventory verification for SPEED-03 compliance
-- Bootstrap fixed to pass vision_engine to ActionDispatcher
-- Plan 04-01 completed with 18 new tests (164 total)
-- RecoveryConfig schema with anchor/on_timeout/max_escalations/audit_context
-- Compiler validation for recovery graph safety (missing targets, cycles)
-- Guild workflow with 6 recovery-annotated wait_image steps
-- Plan 04-02 completed with 32 new tests (196 total)
-- Error taxonomy with ErrorKind enum (network_lag, ui_timeout, disconnect, unknown)
-- RecoveryOrchestrator with L1/L2/L3 escalation state machine
-- ErrorLogger with JSONL output and daily file partitioning
-- WorkflowExecutor recovery integration with RoleSkipError
-- Plan 04-03 completed with 23 new tests (219 total)
-- HardwareInputGateway with ACE-compliant hardware-only input path
-- JitterGenerator with session-seeded truncated normal timing (±20% bounds)
-- ComplianceGuard with fail-fast startup validation
-- AuditLogger for policy violation tracking
-- Workflow bootstrap integration with compliance guard
-- Plan 05-01 completed with 14 new tests (233 total)
-- FrameCache with TTL-based invalidation for DXCam optimization
-- Thread-safe implementation with threading.Lock()
-- VisionEngine integration via dependency injection
-- 50%+ capture reduction with repeated accesses
+- Plan 05-04 completed with 24 new tests (17 account switching + 7 SPEED-03)
+- AccountSwitcher with thread-safe workflow lifecycle management
+- SPEED-03 verification via AST-based static analysis
+- Full test suite: 105/105 passing in multi_account + performance
 
 ---
 
@@ -220,6 +126,9 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 | 2026-03-07 | OpenCV releases GIL during matchTemplate enabling thread speedup | SPEED-01 implementation |
 | 2026-03-07 | max_workers=4 optimal for 9-slot scanning | ThreadPoolExecutor tuning |
 | 2026-03-07 | ROI enforcement is breaking change requiring explicit ROI | SPEED-02 compliance |
+| 2026-03-08 | Account switching requires workflow stop for safety | MULTI-03 implementation |
+| 2026-03-08 | Deadlock prevention via _can_switch_unlocked helper | Thread safety pattern |
+| 2026-03-08 | SPEED-03 allows timing_jitter, retry_interval, poll_interval sleeps | Legitimate use documentation |
 
 ---
 
@@ -230,7 +139,8 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 | 1 | 2026-03-07 | 2026-03-07 | 60 min | All 3 plans complete |
 | 2 | 2026-03-07 | 2026-03-07 | 28 min | All 3 plans complete |
 | 3 | 2026-03-07 | 2026-03-07 | 53 min | All 3 plans complete |
-| 4 | 2026-03-07 | - | - | Plan 01 complete |
+| 4 | 2026-03-07 | 2026-03-07 | 60 min | All 3 plans complete |
+| 5 | 2026-03-07 | 2026-03-08 | 90 min | All 4 plans complete |
 
 ---
 
@@ -250,24 +160,11 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 | 04 | 01 | 25 min | 3 | 4 |
 | 04 | 02 | 20 min | 3 | 3 |
 | 04 | 03 | 15 min | 3 | 4 |
-
----
-
-*State updated: 2026-03-07 after completing 04-03*
 | 05 | 01 | 15 min | 3 | 4 |
 | 05 | 02 | 25 min | 3 | 4 |
-| 05 | 03 | 25 min | 4 | 5 |
+| 05 | 03 | 20 min | 4 | 6 |
+| 05 | 04 | 45 min | 4 | 7 |
 
 ---
 
-*State updated: 2026-03-07 after completing 05-03*
-
-## Plan 05-03 Notes
-
-- Progress tracking schema with character_progress table
-- ProgressTracker class with mark_done, is_done, get_summary methods
-- AccountManager with per-account database isolation
-- AccountContext frozen dataclass for thread safety
-- 34 new tests (14 progress + 12 account manager + 8 isolation)
-- Per-account databases at data/accounts/{hash}/progress.db
-- Database isolation verified - no cross-contamination between accounts
+*State updated: 2026-03-08 after completing 05-04*
