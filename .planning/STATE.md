@@ -67,9 +67,10 @@ Phase 3: Intelligent Wait System       ✓ Complete (3/3 plans)
   Plan 01: Schema Contracts            ✓ Complete
   Plan 02: Wait Image Runtime          ✓ Complete
   Plan 03: Guild Workflow Migration    ✓ Complete
-Phase 4: Error Recovery & ACE          ○ In Progress (2/6 plans)
+Phase 4: Error Recovery & ACE          ○ In Progress (3/6 plans)
   Plan 01: Recovery Contracts Schema   ✓ Complete
   Plan 02: Runtime Recovery & Logging  ✓ Complete
+  Plan 03: ACE Compliance Guard        ✓ Complete
 Phase 5: Performance & Multi-Account   ○ Not started
 ```
 
@@ -90,8 +91,8 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 
 ## Active Context
 
-**Last Action:** Completed Plan 04-02: Runtime Recovery and Structured Logging
-**Next Action:** Continue with Plan 04-03: ACE Compliance Guard
+**Last Action:** Completed Plan 04-03: ACE Compliance Guard
+**Next Action:** Continue with Plan 04-04 (if exists) or next phase
 
 **Blockers:** None
 
@@ -138,6 +139,12 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 - RecoveryOrchestrator with L1/L2/L3 escalation state machine
 - ErrorLogger with JSONL output and daily file partitioning
 - WorkflowExecutor recovery integration with RoleSkipError
+- Plan 04-03 completed with 23 new tests (219 total)
+- HardwareInputGateway with ACE-compliant hardware-only input path
+- JitterGenerator with session-seeded truncated normal timing (±20% bounds)
+- ComplianceGuard with fail-fast startup validation
+- AuditLogger for policy violation tracking
+- Workflow bootstrap integration with compliance guard
 
 ---
 
@@ -182,6 +189,9 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 | 2026-03-07 | Circuit breaker pattern for same-kind failures | Infinite loop prevention |
 | 2026-03-07 | JSONL logging with daily file partitioning | ERR-04 evidence pipeline |
 | 2026-03-07 | RoleSkipError for graceful disconnect handling | ERR-03 no forced restart |
+| 2026-03-07 | Session-seeded truncated normal jitter for timing compliance | ACE-02 timing policy |
+| 2026-03-07 | Hardware-only input gateway with policy enforcement | ACE-01 input compliance |
+| 2026-03-07 | Fail-fast compliance validation at startup | ACE-03/04 guard integration |
 
 ---
 
@@ -211,7 +221,8 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 | 03 | 03 | 25 min | 3 | 4 |
 | 04 | 01 | 25 min | 3 | 4 |
 | 04 | 02 | 20 min | 3 | 3 |
+| 04 | 03 | 15 min | 3 | 4 |
 
 ---
 
-*State updated: 2026-03-07 after completing 04-02*
+*State updated: 2026-03-07 after completing 04-03*
