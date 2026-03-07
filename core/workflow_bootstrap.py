@@ -7,6 +7,7 @@ ACE compliance validation.
 
 Exports:
     create_workflow_executor: Create a WorkflowExecutor from a workflow YAML file
+    create_workflow_executor_with_account: Create executor with account context
     ConfigLoadError: Re-exported from config_loader for convenience
     ComplianceError: Re-exported from compliance_guard for convenience
 """
@@ -19,6 +20,7 @@ from core.workflow_executor import WorkflowExecutor
 from core.workflow_runtime import ActionDispatcher, ConditionEvaluator
 from core.compliance_guard import ComplianceGuard, ComplianceError
 from core.hardware_input_gateway import HardwareInputGateway
+from core.account_manager import AccountContext
 
 
 def create_workflow_executor(
@@ -26,7 +28,8 @@ def create_workflow_executor(
     controller: Any,
     vision_engine: Any,
     enable_compliance_guard: bool = True,
-    compliance_config: Optional[Dict[str, Any]] = None
+    compliance_config: Optional[Dict[str, Any]] = None,
+    account_context: Optional[AccountContext] = None
 ) -> WorkflowExecutor:
     """
     Create a WorkflowExecutor from a workflow YAML file.
@@ -46,6 +49,7 @@ def create_workflow_executor(
         vision_engine: Vision engine with find_element method for image detection
         enable_compliance_guard: Whether to run ACE compliance validation
         compliance_config: Optional configuration for compliance validation
+        account_context: Optional account context for account-aware execution
 
     Returns:
         WorkflowExecutor ready to execute the workflow
@@ -76,14 +80,68 @@ def create_workflow_executor(
     condition_evaluator = ConditionEvaluator(vision_engine)
 
     # Step 4: Create and return executor
+    # Pass account_id from context if provided
+    account_id = account_context.account_hash if account_context else None
+
     executor = WorkflowExecutor(
         workflow=compiled,
         action_dispatcher=dispatcher,
-        condition_evaluator=condition_evaluator
+        condition_evaluator=condition_evaluator,
+        account_id=account_id
     )
 
     return executor
 
 
+def create_workflow_executor_with_account(
+    workflow_path: Union[str, Path],
+    account_context: AccountContext,
+    controller: Any,
+    vision_engine: Any,
+    enable_compliance_guard: bool = True,
+    compliance_config: Optional[Dict[str, Any]] = None
+) -> WorkflowExecutor:
+    """
+    Create a WorkflowExecutor with account-specific configuration.
+
+    This factory function creates an executor configured for a specific
+    account context, using account-specific settings for loop limits,
+    progress tracking, and error logging context.
+
+    Args:
+        workflow_path: Path to the YAML workflow configuration file
+        account_context: Account context with character count and progress tracker
+        controller: Hardware controller with click, wait, press, scroll methods
+        vision_engine: Vision engine with find_element method for image detection
+        enable_compliance_guard: Whether to run ACE compliance validation
+        compliance_config: Optional configuration for compliance validation
+
+    Returns:
+        WorkflowExecutor configured for the specified account
+
+    Example:
+        context = account_manager.get_or_create_context(screenshot)
+        executor = create_workflow_executor_with_account(
+            "config/workflow.yaml",
+            context,
+            controller,
+            vision_engine
+        )
+    """
+    return create_workflow_executor(
+        workflow_path=workflow_path,
+        controller=controller,
+        vision_engine=vision_engine,
+        enable_compliance_guard=enable_compliance_guard,
+        compliance_config=compliance_config,
+        account_context=account_context
+    )
+
+
 # Re-export for convenience
-__all__ = ['create_workflow_executor', 'ConfigLoadError', 'ComplianceError']
+__all__ = [
+    'create_workflow_executor',
+    'create_workflow_executor_with_account',
+    'ConfigLoadError',
+    'ComplianceError'
+]
