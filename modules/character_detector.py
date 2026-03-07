@@ -14,6 +14,9 @@ Detection Strategy:
 from typing import List, Tuple, Optional, Dict, Any
 import cv2
 import numpy as np
+import hashlib
+import os
+from datetime import datetime
 
 
 # =============================================================================
@@ -126,14 +129,18 @@ class CharacterDetector:
     slot occupancy scanning, scroll bottom detection, and full discovery.
     """
 
-    def __init__(self, assets_path: str = "assets"):
+    def __init__(self, assets_path: str = "assets", data_dir: str = "data", db_path: str = "data/accounts.db"):
         """
         Initialize the detector with path to template assets.
 
         Args:
             assets_path: Path to directory containing template images
+            data_dir: Path to data directory for account storage
+            db_path: Path to SQLite database file
         """
         self.assets_path: str = assets_path
+        self.data_dir: str = data_dir
+        self.db_path: str = db_path
         self._template_cache: Dict[str, np.ndarray] = {}
 
     def _load_template(self, template_name: str) -> Optional[np.ndarray]:
@@ -514,6 +521,204 @@ class CharacterDetector:
         """
         # Delegate to discover_total_characters for full workflow
         return self.discover_total_characters(screenshot)
+
+    # ========================================================================
+    # ACCOUNT INDEXING AND CACHE METHODS
+    # ========================================================================
+
+    def _compute_screenshot_hash(self, screenshot: np.ndarray) -> str:
+        """
+        Compute SHA-256 hash of screenshot bytes for account identity.
+
+        Args:
+            screenshot: Screenshot as numpy array
+
+        Returns:
+            Hexadecimal hash string (64 characters)
+        """
+        # Convert to bytes and compute hash
+        screenshot_bytes = screenshot.tobytes()
+        return hashlib.sha256(screenshot_bytes).hexdigest()
+
+    def _ensure_account_directory(self, account_hash: str) -> str:
+        """
+        Create account directory structure if it doesn't exist.
+
+        Args:
+            account_hash: The account hash identifier
+
+        Returns:
+            Path to the characters directory
+        """
+        account_dir = os.path.join(self.data_dir, "accounts", account_hash)
+        chars_dir = os.path.join(account_dir, "characters")
+
+        os.makedirs(chars_dir, exist_ok=True)
+
+        return chars_dir
+
+    def create_or_get_account_index(self, screenshot: np.ndarray) -> Tuple[int, str]:
+        """
+        Create or retrieve account index based on first character screenshot.
+
+        This method implements the first-run index capture flow:
+        1. Scan slots to find first occupied slot
+        2. Extract screenshot of first character
+        3. Compute hash for account identity
+        4. Create account in database if new
+        5. Save all character screenshots to cache
+
+        Args:
+            screenshot: Full screen capture as BGR numpy array
+
+        Returns:
+            Tuple of (account_id, account_hash)
+        """
+        from core.database import init_database, get_or_create_account, upsert_character
+
+        # Ensure database is initialized
+        init_database(self.db_path)
+
+        # Scan slots to find occupied ones
+        slot_results = self.scan_visible_slots(screenshot)
+        occupied_slots = [r for r in slot_results if r.has_character]
+
+        if not occupied_slots:
+            # No characters found - return None
+            return None, None
+
+        # Get first occupied slot for account identity
+        first_slot = occupied_slots[0]
+        slot_index = first_slot.slot_index
+        x1, y1, x2, y2 = first_slot.roi
+
+        # Extract character screenshot
+        char_screenshot = screenshot[y1:y2, x1:x2]
+
+        # Compute hash from character screenshot for account identity
+        account_hash = self._compute_screenshot_hash(char_screenshot)
+
+        # Create or get account
+        account_id = get_or_create_account(self.db_path, account_hash)
+
+        # Ensure directory structure exists
+        chars_dir = self._ensure_account_directory(account_hash)
+
+        # Save all occupied slot screenshots to cache
+        for slot in occupied_slots:
+            sx1, sy1, sx2, sy2 = slot.roi
+            slot_screenshot = screenshot[sy1:sy2, sx1:sx2]
+            screenshot_path = os.path.join(chars_dir, f"{slot.slot_index}.png")
+            cv2.imwrite(screenshot_path, slot_screenshot)
+            # Update database with character metadata
+            upsert_character(self.db_path, account_id, slot.slot_index, screenshot_path)
+
+        return account_id, account_hash
+
+    def cache_character_screenshot(self, account_id: int, slot_index: int,
+                                    screenshot: np.ndarray,
+                                    roi: Optional[Tuple[int, int, int, int]] = None) -> str:
+        """
+        Cache a character screenshot for the given account and slot.
+
+        Args:
+            account_id: The account ID
+            slot_index: The slot index (0-8)
+            screenshot: Full screen capture
+            roi: The ROI coordinates for the character (optional, defaults to slot ROIs)
+
+        Returns:
+            Path to the saved screenshot
+        """
+        from core.database import upsert_character
+        import sqlite3
+
+        # Get account hash from database
+        conn = sqlite3.connect(self.db_path, timeout=5.0)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT account_hash FROM accounts WHERE id = ?", (account_id,))
+            row = cursor.fetchone()
+            if row is None:
+                raise ValueError(f"Account {account_id} not found")
+            account_hash = row[0]
+        finally:
+            conn.close()
+
+        # Use provided ROI or get from slot index
+        if roi is None:
+            roi = get_slot_roi(slot_index)
+
+        # Extract character region
+        x1, y1, x2, y2 = roi
+        char_screenshot = screenshot[y1:y2, x1:x2]
+
+        # Ensure directory exists
+        chars_dir = self._ensure_account_directory(account_hash)
+
+        # Save screenshot
+        screenshot_path = os.path.join(chars_dir, f"{slot_index}.png")
+        cv2.imwrite(screenshot_path, char_screenshot)
+
+        # Update database
+        upsert_character(self.db_path, account_id, slot_index, screenshot_path)
+
+        return screenshot_path
+
+    def load_cached_characters(self, account_id: int) -> List[Dict[str, Any]]:
+        """
+        Load cached character metadata for the given account.
+
+        Args:
+            account_id: The account ID
+
+        Returns:
+            List of character dictionaries with valid screenshot paths
+        """
+        from core.database import list_characters_by_account
+
+        characters = list_characters_by_account(self.db_path, account_id)
+
+        # Filter out characters with missing screenshot files
+        valid_characters = []
+        for char in characters:
+            if os.path.exists(char['screenshot_path']):
+                valid_characters.append(char)
+
+        return valid_characters
+
+    def discover_account(self, screenshot: np.ndarray) -> Dict[str, Any]:
+        """
+        Discover account and characters from screenshot.
+
+        This is the main entry point for launcher integration. It:
+        1. Creates or retrieves account index
+        2. Returns account info with character count
+
+        Args:
+            screenshot: Full screen capture as BGR numpy array
+
+        Returns:
+            Dictionary with account_id, account_hash, character_count
+        """
+        account_id, account_hash = self.create_or_get_account_index(screenshot)
+
+        if account_id is None:
+            return {
+                'account_id': None,
+                'account_hash': None,
+                'character_count': 0,
+            }
+
+        # Count characters from slot results
+        slot_results = self.scan_visible_slots(screenshot)
+        character_count = sum(1 for r in slot_results if r.has_character)
+
+        return {
+            'account_id': account_id,
+            'account_hash': account_hash,
+            'character_count': character_count,
+        }
 
 
 # =============================================================================
