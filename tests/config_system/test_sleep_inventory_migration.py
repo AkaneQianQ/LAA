@@ -338,6 +338,8 @@ class TestSleepInventoryMigration:
                 continue
             if 'retry_interval' in site.code or 'retry_interval' in site.context:
                 continue
+            if 'timing_jitter' in site.code or 'timing_jitter' in site.context:
+                continue  # ACE-02 compliance jitter, not UI waiting
             if 'test' in site.file_path.lower():
                 continue
 

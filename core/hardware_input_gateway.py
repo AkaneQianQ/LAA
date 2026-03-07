@@ -263,6 +263,7 @@ class HardwareInputGateway:
             base_delay_ms: Base delay in milliseconds
         """
         jittered_delay = self._apply_jitter(base_delay_ms)
+        # timing_jitter: ACE-02 compliance delay (not UI polling)
         time.sleep(jittered_delay / 1000.0)
 
     def click(self, x: int, y: int, base_delay_ms: float = 100) -> None:
