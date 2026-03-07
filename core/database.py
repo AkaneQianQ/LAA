@@ -7,6 +7,7 @@ Uses stdlib sqlite3 with explicit timeout and short transactions.
 Schema:
 - accounts: Stores account identity (hash-based) and creation timestamp
 - characters: Maps account to slot_index with screenshot path
+- character_progress: Tracks daily donation completion per character slot
 """
 
 import sqlite3
@@ -50,6 +51,33 @@ CREATE INDEX IF NOT EXISTS idx_account_hash ON accounts(account_hash);
 # Create index for character lookups by account
 CREATE_CHARACTER_ACCOUNT_INDEX = """
 CREATE INDEX IF NOT EXISTS idx_character_account ON characters(account_id);
+"""
+
+# =============================================================================
+# PROGRESS TRACKING SCHEMA
+# =============================================================================
+
+# SQL to create the character_progress table
+CREATE_CHARACTER_PROGRESS_TABLE = """
+CREATE TABLE IF NOT EXISTS character_progress (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    slot_index INTEGER NOT NULL,
+    character_name TEXT,
+    last_donation_date TEXT NOT NULL,
+    donation_count INTEGER DEFAULT 0,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(slot_index)
+);
+"""
+
+# Create index for slot lookups
+CREATE_PROGRESS_SLOT_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_progress_slot ON character_progress(slot_index);
+"""
+
+# Create index for date lookups
+CREATE_PROGRESS_DATE_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_progress_date ON character_progress(last_donation_date);
 """
 
 
@@ -436,5 +464,216 @@ def vacuum_database(db_path: str) -> None:
     conn = sqlite3.connect(db_path, timeout=5.0)
     try:
         conn.execute("VACUUM")
+    finally:
+        conn.close()
+
+
+# =============================================================================
+# PROGRESS TRACKING FUNCTIONS
+# =============================================================================
+
+def init_progress_schema(conn: sqlite3.Connection) -> None:
+    """
+    Initialize the progress tracking schema in the given connection.
+
+    This function creates the character_progress table and indexes
+    if they don't already exist.
+
+    Args:
+        conn: SQLite connection object
+    """
+    cursor = conn.cursor()
+
+    # Create progress table
+    cursor.execute(CREATE_CHARACTER_PROGRESS_TABLE)
+
+    # Create indexes
+    cursor.execute(CREATE_PROGRESS_SLOT_INDEX)
+    cursor.execute(CREATE_PROGRESS_DATE_INDEX)
+
+    conn.commit()
+
+
+def mark_character_done(db_path: str, slot_index: int, character_name: str = None) -> bool:
+    """
+    Mark a character's donation as complete for today.
+
+    Uses UPSERT pattern to either insert a new record or update an existing one.
+    Increments donation_count on each completion.
+
+    Args:
+        db_path: Path to the SQLite database file
+        slot_index: The slot index (0-8) of the character
+        character_name: Optional character name for display
+
+    Returns:
+        True if successful, False on error
+    """
+    today = datetime.now().strftime('%Y-%m-%d')
+
+    conn = sqlite3.connect(db_path, timeout=5.0)
+    try:
+        cursor = conn.cursor()
+
+        # Ensure table exists
+        cursor.execute(CREATE_CHARACTER_PROGRESS_TABLE)
+
+        # UPSERT: Insert or update progress
+        cursor.execute(
+            """
+            INSERT INTO character_progress (slot_index, character_name, last_donation_date, donation_count)
+            VALUES (?, ?, ?, 1)
+            ON CONFLICT(slot_index) DO UPDATE SET
+                last_donation_date = EXCLUDED.last_donation_date,
+                donation_count = character_progress.donation_count + 1,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (slot_index, character_name, today)
+        )
+
+        conn.commit()
+        return True
+    except sqlite3.Error:
+        return False
+    finally:
+        conn.close()
+
+
+def is_character_done_today(db_path: str, slot_index: int) -> bool:
+    """
+    Check if a character has completed donation today.
+
+    Args:
+        db_path: Path to the SQLite database file
+        slot_index: The slot index (0-8) to check
+
+    Returns:
+        True if character completed donation today, False otherwise
+    """
+    today = datetime.now().strftime('%Y-%m-%d')
+
+    conn = sqlite3.connect(db_path, timeout=5.0)
+    try:
+        cursor = conn.cursor()
+
+        # Ensure table exists
+        cursor.execute(CREATE_CHARACTER_PROGRESS_TABLE)
+        conn.commit()
+
+        cursor.execute(
+            """
+            SELECT last_donation_date FROM character_progress
+            WHERE slot_index = ?
+            """,
+            (slot_index,)
+        )
+        row = cursor.fetchone()
+
+        if row is None:
+            return False
+
+        return row[0] == today
+    except sqlite3.Error:
+        return False
+    finally:
+        conn.close()
+
+
+def get_character_progress(db_path: str, slot_index: int) -> Optional[Dict[str, Any]]:
+    """
+    Get full progress record for a character.
+
+    Args:
+        db_path: Path to the SQLite database file
+        slot_index: The slot index (0-8) to retrieve
+
+    Returns:
+        Dictionary with progress data or None if not found
+    """
+    conn = sqlite3.connect(db_path, timeout=5.0)
+    conn.row_factory = sqlite3.Row
+    try:
+        cursor = conn.cursor()
+
+        # Ensure table exists
+        cursor.execute(CREATE_CHARACTER_PROGRESS_TABLE)
+        conn.commit()
+
+        cursor.execute(
+            """
+            SELECT id, slot_index, character_name, last_donation_date,
+                   donation_count, updated_at
+            FROM character_progress
+            WHERE slot_index = ?
+            """,
+            (slot_index,)
+        )
+        row = cursor.fetchone()
+
+        if row is None:
+            return None
+
+        return {
+            'id': row['id'],
+            'slot_index': row['slot_index'],
+            'character_name': row['character_name'],
+            'last_donation_date': row['last_donation_date'],
+            'donation_count': row['donation_count'],
+            'updated_at': row['updated_at'],
+        }
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+
+
+def get_account_progress_summary(db_path: str) -> Dict[str, Any]:
+    """
+    Get aggregate progress statistics for the account.
+
+    Args:
+        db_path: Path to the SQLite database file
+
+    Returns:
+        Dictionary with summary statistics
+    """
+    today = datetime.now().strftime('%Y-%m-%d')
+
+    conn = sqlite3.connect(db_path, timeout=5.0)
+    try:
+        cursor = conn.cursor()
+
+        # Ensure table exists
+        cursor.execute(CREATE_CHARACTER_PROGRESS_TABLE)
+        conn.commit()
+
+        # Total tracked characters
+        cursor.execute("SELECT COUNT(*) FROM character_progress")
+        total_tracked = cursor.fetchone()[0]
+
+        # Completed today
+        cursor.execute(
+            "SELECT COUNT(*) FROM character_progress WHERE last_donation_date = ?",
+            (today,)
+        )
+        completed_today = cursor.fetchone()[0]
+
+        # Total donations across all characters
+        cursor.execute(
+            "SELECT COALESCE(SUM(donation_count), 0) FROM character_progress"
+        )
+        total_donations = cursor.fetchone()[0]
+
+        return {
+            'total_tracked': total_tracked,
+            'completed_today': completed_today,
+            'total_donations': total_donations,
+        }
+    except sqlite3.Error:
+        return {
+            'total_tracked': 0,
+            'completed_today': 0,
+            'total_donations': 0,
+        }
     finally:
         conn.close()

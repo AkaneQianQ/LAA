@@ -178,10 +178,11 @@ class ProgressTracker:
 
         Returns:
             Dictionary with:
-                - total_characters: Total number of characters tracked
+                - total_tracked: Total number of characters tracked
                 - completed_today: Number completed today
                 - remaining_today: Number remaining for today
-                - completion_percentage: Percentage complete (0.0-1.0)
+                - completion_percentage: Percentage complete (0.0-100.0)
+                - total_donations: Total donations across all time
         """
         today = self._today()
         conn = self._get_connection()
@@ -189,22 +190,24 @@ class ProgressTracker:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT
-                    COUNT(*) as total_characters,
-                    SUM(CASE WHEN last_donation_date = ? THEN 1 ELSE 0 END) as completed_today
+                    COUNT(*) as total_tracked,
+                    SUM(CASE WHEN last_donation_date = ? THEN 1 ELSE 0 END) as completed_today,
+                    SUM(donation_count) as total_donations
                 FROM character_progress
             """, (today,))
             row = cursor.fetchone()
 
-            total = row['total_characters'] or 0
+            total = row['total_tracked'] or 0
             completed = row['completed_today'] or 0
             remaining = total - completed
-            percentage = (completed / total) if total > 0 else 0.0
+            percentage = (completed / total * 100) if total > 0 else 0.0
 
             return {
-                'total_characters': total,
+                'total_tracked': total,
                 'completed_today': completed,
                 'remaining_today': remaining,
                 'completion_percentage': percentage,
+                'total_donations': row['total_donations'] or 0,
             }
         finally:
             conn.close()
