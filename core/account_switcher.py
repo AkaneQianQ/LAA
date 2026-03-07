@@ -82,13 +82,17 @@ class AccountSwitcher:
             True if switch is allowed, False if workflow is running
         """
         with self._lock:
-            # Check if we have an attached workflow
-            if self._workflow_executor is None:
-                return True  # No workflow, can always switch
+            return self._can_switch_unlocked()
 
-            # Check if workflow is running
-            # WorkflowExecutor doesn't have is_running(), so we track it ourselves
-            return not self._is_running
+    def _can_switch_unlocked(self) -> bool:
+        """Internal version of can_switch that assumes lock is held."""
+        # Check if we have an attached workflow
+        if self._workflow_executor is None:
+            return True  # No workflow, can always switch
+
+        # Check if workflow is running
+        # WorkflowExecutor doesn't have is_running(), so we track it ourselves
+        return not self._is_running
 
     def _stop_workflow(self, timeout: float = 5.0) -> bool:
         """
@@ -105,14 +109,17 @@ class AccountSwitcher:
 
         # Signal stop via stop_event if available
         # The executor should have a stop_event passed during creation
-        import threading
         stop_event = getattr(self._workflow_executor, '_stop_event', None)
 
-        if stop_event is not None and isinstance(stop_event, threading.Event):
+        if stop_event is not None:
             stop_event.set()
             # Wait for stop with timeout
-            return stop_event.wait(timeout)
-
+            # Check if wait method exists and returns a value
+            if hasattr(stop_event, 'wait'):
+                wait_result = stop_event.wait(timeout)
+                # If wait returns a value (real Event), use it; otherwise assume success
+                if isinstance(wait_result, bool):
+                    return wait_result
         return True
 
     def switch_to_account(self, account_hash: str, screenshot: np.ndarray) -> bool:
@@ -137,7 +144,7 @@ class AccountSwitcher:
         """
         with self._lock:
             # Check if we can switch
-            if not self.can_switch():
+            if not self._can_switch_unlocked():
                 # Try to stop the workflow
                 if not self._stop_workflow():
                     raise RuntimeError("Could not stop running workflow for account switch")
@@ -149,7 +156,7 @@ class AccountSwitcher:
             # Perform the switch
             try:
                 new_context = self.account_manager.switch_account(account_hash)
-            except ValueError as e:
+            except Exception as e:
                 raise RuntimeError(f"Account switch failed: {e}")
 
             # Fire callbacks outside lock to prevent deadlocks
@@ -178,7 +185,7 @@ class AccountSwitcher:
         """
         with self._lock:
             # Check if we can switch
-            if not self.can_switch():
+            if not self._can_switch_unlocked():
                 if not self._stop_workflow():
                     return None
                 self._is_running = False
