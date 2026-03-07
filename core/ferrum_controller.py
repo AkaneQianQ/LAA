@@ -238,6 +238,162 @@ class FerrumController:
         """
         time.sleep(seconds)
 
+    def is_connected(self) -> bool:
+        """
+        检查设备是否已连接
+
+        Returns:
+            True如果串口已连接且打开，否则False
+        """
+        return self._connected and self._serial is not None and self._serial.is_open
+
+    def click(self, x: int, y: int) -> None:
+        """
+        在指定坐标点击鼠标左键
+
+        注意：km.move使用相对坐标，这里假设调用者已计算好相对位移。
+        如需绝对坐标，调用者需先获取当前鼠标位置并计算delta。
+
+        Args:
+            x: X坐标相对位移（正=右，负=左）
+            y: Y坐标相对位移（正=下，负=上）
+        """
+        self._validate_connection()
+        # 移动鼠标（相对移动）
+        self._send_command(f"km.move({x}, {y})")
+        # 点击左键
+        self._send_command(f"km.click({BUTTON_LEFT})")
+        logger.debug(f"[Ferrum] 点击 ({x}, {y})")
+
+    def click_right(self, x: int, y: int) -> None:
+        """
+        在指定坐标点击鼠标右键
+
+        Args:
+            x: X坐标相对位移
+            y: Y坐标相对位移
+        """
+        self._validate_connection()
+        self._send_command(f"km.move({x}, {y})")
+        self._send_command(f"km.click({BUTTON_RIGHT})")
+        logger.debug(f"[Ferrum] 右键点击 ({x}, {y})")
+
+    def scroll(self, direction: str, ticks: int) -> None:
+        """
+        滚动鼠标滚轮
+
+        Args:
+            direction: 滚动方向，"up" 或 "down"
+            ticks: 滚动次数
+
+        Raises:
+            ValueError: 方向不是"up"或"down"
+        """
+        self._validate_connection()
+
+        direction = direction.lower()
+        if direction not in ("up", "down"):
+            raise ValueError(f"滚动方向必须是 'up' 或 'down'，得到: {direction}")
+
+        # up = +1, down = -1 (Ferrum文档规定)
+        amount = 1 if direction == "up" else -1
+
+        for _ in range(ticks):
+            self._send_command(f"km.wheel({amount})")
+            time.sleep(0.005)  # 5ms延迟避免设备过载
+
+        logger.debug(f"[Ferrum] 滚动 {direction} {ticks} 次")
+
+    def _parse_key(self, key_name: str) -> List[int]:
+        """
+        解析键名为HID代码列表
+
+        Args:
+            key_name: 键名或组合（如 "alt+u", "esc"）
+
+        Returns:
+            HID代码列表
+
+        Raises:
+            ValueError: 未知键名
+        """
+        parts = key_name.lower().split('+')
+        codes = []
+        for part in parts:
+            part = part.strip()
+            if part in KEY_MAP:
+                codes.append(KEY_MAP[part])
+            else:
+                raise ValueError(f"未知键名: {part} (可用: {list(KEY_MAP.keys())})")
+        return codes
+
+    def press(self, key_name: str) -> None:
+        """
+        按下指定键或键组合
+
+        Args:
+            key_name: 键名或组合（如 "esc", "alt+u", "enter"）
+
+        Raises:
+            ValueError: 未知键名
+            FerrumConnectionError: 串口通信失败
+        """
+        self._validate_connection()
+
+        codes = self._parse_key(key_name)
+
+        if len(codes) == 1:
+            # 单键使用km.press（自动时序）
+            self._send_command(f"km.press({codes[0]})")
+        else:
+            # 组合键使用down/up序列
+            # 按下所有键
+            for code in codes:
+                self._send_command(f"km.down({code})")
+                time.sleep(0.01)  # 10ms延迟
+            # 保持50ms
+            time.sleep(0.05)
+            # 释放所有键（逆序）
+            for code in reversed(codes):
+                self._send_command(f"km.up({code})")
+
+        logger.debug(f"[Ferrum] 按键: {key_name}")
+
+    def key_down(self, key_name: str) -> None:
+        """
+        按住指定键（不释放）
+
+        Args:
+            key_name: 键名
+        """
+        self._validate_connection()
+        codes = self._parse_key(key_name)
+        for code in codes:
+            self._send_command(f"km.down({code})")
+        logger.debug(f"[Ferrum] 按住: {key_name}")
+
+    def key_up(self, key_name: str) -> None:
+        """
+        释放指定键
+
+        Args:
+            key_name: 键名
+        """
+        self._validate_connection()
+        codes = self._parse_key(key_name)
+        for code in codes:
+            self._send_command(f"km.up({code})")
+        logger.debug(f"[Ferrum] 释放: {key_name}")
+
+    def close(self) -> None:
+        """
+        关闭控制器并释放资源
+
+        关闭串口连接，清理所有状态。
+        """
+        self._disconnect()
+        logger.info("[Ferrum] 控制器已关闭")
+
     def __enter__(self):
         """上下文管理器入口"""
         return self
