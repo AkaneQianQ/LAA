@@ -1,0 +1,171 @@
+# Guild Donation Workflow Configuration
+# Complete automation workflow for guild donation across multiple characters
+#
+# This workflow demonstrates:
+# - Explicit step IDs and next links
+# - All action types: click, wait, press, scroll
+# - Conditional branching with image detection
+# - Loop path for character iteration
+
+name: guild_donation
+start_step_id: open_guild_menu
+
+steps:
+  # Step 1: Open guild menu with Alt+U
+  - step_id: open_guild_menu
+    action:
+      type: press
+      key_name: alt+u
+    next: wait_menu_load
+    retry: 1
+
+  # Step 2: Wait for menu to load
+  - step_id: wait_menu_load
+    action:
+      type: wait
+      duration_ms: 500
+    next: check_menu_open
+
+  # Step 3: Check if guild menu is open (conditional branch)
+  - step_id: check_menu_open
+    action:
+      type: wait
+      duration_ms: 100
+    on_true: click_donate_tab
+    on_false: retry_open_menu
+    condition:
+      type: image
+      template: assets/guild_flag_mark.png
+      roi: [1000, 200, 1600, 400]
+      threshold: 0.8
+
+  # Step 4a: Menu not open, retry (loop back)
+  - step_id: retry_open_menu
+    action:
+      type: wait
+      duration_ms: 200
+    next: open_guild_menu
+
+  # Step 4b: Menu open, click donation tab
+  - step_id: click_donate_tab
+    action:
+      type: click
+      x: 1200
+      y: 600
+    next: wait_donation_ui
+
+  # Step 5: Wait for donation UI
+  - step_id: wait_donation_ui
+    action:
+      type: wait
+      duration_ms: 300
+    next: click_silver_donate
+
+  # Step 6: Click silver donation button
+  - step_id: click_silver_donate
+    action:
+      type: click
+      x: 1300
+      y: 800
+    next: wait_confirm
+
+  # Step 7: Wait for confirmation dialog
+  - step_id: wait_confirm
+    action:
+      type: wait
+      duration_ms: 200
+    next: click_confirm
+
+  # Step 8: Click confirm button
+  - step_id: click_confirm
+    action:
+      type: click
+      x: 1350
+      y: 900
+    next: wait_donation_complete
+
+  # Step 9: Wait for donation to complete
+  - step_id: wait_donation_complete
+    action:
+      type: wait
+      duration_ms: 500
+    next: close_menu
+
+  # Step 10: Close guild menu with ESC
+  - step_id: close_menu
+    action:
+      type: press
+      key_name: esc
+    next: wait_menu_close
+
+  # Step 11: Wait for menu to close
+  - step_id: wait_menu_close
+    action:
+      type: wait
+      duration_ms: 300
+    next: check_next_character
+
+  # Step 12: Check if there are more characters to process
+  - step_id: check_next_character
+    action:
+      type: wait
+      duration_ms: 100
+    on_true: scroll_to_next
+    on_false: workflow_complete
+    condition:
+      type: image
+      template: assets/btn_quick_switch.png
+      roi: [500, 850, 950, 1000]
+      threshold: 0.8
+
+  # Step 13a: More characters, scroll to next
+  - step_id: scroll_to_next
+    action:
+      type: scroll
+      direction: down
+      ticks: 1
+    next: wait_scroll
+
+  # Step 13b: No more characters, workflow complete
+  - step_id: workflow_complete
+    action:
+      type: wait
+      duration_ms: 100
+    next: null
+
+  # Step 14: Wait after scroll
+  - step_id: wait_scroll
+    action:
+      type: wait
+      duration_ms: 200
+    next: click_next_character
+
+  # Step 15: Click next character slot
+  - step_id: click_next_character
+    action:
+      type: click
+      x: 1100
+      y: 650
+    next: wait_character_select
+
+  # Step 16: Wait for character selection
+  - step_id: wait_character_select
+    action:
+      type: wait
+      duration_ms: 800
+    next: click_login
+
+  # Step 17: Click login button
+  - step_id: click_login
+    action:
+      type: click
+      x: 1450
+      y: 920
+    next: wait_login_complete
+
+  # Step 18: Wait for login to complete
+  - step_id: wait_login_complete
+    action:
+      type: wait
+      duration_ms: 2000
+    next: open_guild_menu
