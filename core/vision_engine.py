@@ -8,9 +8,11 @@ This module serves as the foundation for higher-level detection
 logic in modules/character_detector.py.
 """
 
-from typing import Tuple, Optional, List
+from typing import Tuple, Optional, List, Dict, Any
 import cv2
 import numpy as np
+
+from core.frame_cache import FrameCache
 
 
 def match_template_roi(
@@ -151,11 +153,21 @@ class VisionEngine:
 
     Provides template matching, ROI-based detection, and image
     processing primitives used by automation workflows.
+
+    Supports optional frame caching to reduce screen capture overhead.
     """
 
-    def __init__(self):
-        """Initialize the vision engine."""
+    def __init__(self, frame_cache: Optional[FrameCache] = None):
+        """
+        Initialize the vision engine.
+
+        Args:
+            frame_cache: Optional FrameCache for screenshot caching.
+                        If provided, get_screenshot() will use caching.
+        """
         self._template_cache: dict = {}
+        self._frame_cache: Optional[FrameCache] = frame_cache
+        self._dxcam = None  # Lazy-loaded DXCam instance
 
     def find_element(
         self,
@@ -189,3 +201,71 @@ class VisionEngine:
     def clear_cache(self) -> None:
         """Clear the template cache."""
         self._template_cache.clear()
+
+    def _capture_screen(self) -> np.ndarray:
+        """
+        Capture screen using DXCam.
+
+        Returns:
+            BGR numpy array of the screen capture
+        """
+        if self._dxcam is None:
+            import dxcam
+            self._dxcam = dxcam.create()
+
+        frame = self._dxcam.grab()
+        if frame is None:
+            # Return empty frame if capture fails
+            return np.zeros((1440, 2560, 3), dtype=np.uint8)
+
+        # DXCam returns RGB, convert to BGR for OpenCV compatibility
+        if len(frame.shape) == 3:
+            return cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        return frame
+
+    def get_screenshot(self, force_fresh: bool = False) -> np.ndarray:
+        """
+        Get a screenshot, using cache if available.
+
+        Args:
+            force_fresh: If True, bypass cache and capture fresh frame
+
+        Returns:
+            BGR numpy array of the screen capture
+        """
+        # Check cache first (if not forcing fresh and cache exists)
+        if not force_fresh and self._frame_cache is not None:
+            cached = self._frame_cache.get()
+            if cached is not None:
+                return cached
+
+        # Capture fresh frame
+        frame = self._capture_screen()
+
+        # Store in cache if available
+        if self._frame_cache is not None:
+            self._frame_cache.set(frame)
+
+        return frame
+
+    def invalidate_cache(self) -> None:
+        """
+        Invalidate the frame cache.
+
+        Forces the next get_screenshot() call to capture a fresh frame.
+        No-op if no frame cache is configured.
+        """
+        if self._frame_cache is not None:
+            self._frame_cache.invalidate()
+
+    @property
+    def cache_stats(self) -> Optional[Dict[str, Any]]:
+        """
+        Get cache statistics if frame cache is configured.
+
+        Returns:
+            Dictionary with cache statistics, or None if no cache
+        """
+        if self._frame_cache is not None:
+            return self._frame_cache.cache_stats
+        return None
