@@ -47,6 +47,7 @@ class FerrumController:
         self._connected = False
 
         self._connect()
+        self._initialize_device()
 
     def _connect(self) -> None:
         """建立串口连接"""
@@ -169,6 +170,40 @@ class FerrumController:
                 return "\n".join(lines[:prompt_idx])
 
         return ""  # prompt是第一行，无结果
+
+    def _initialize_device(self) -> None:
+        """
+        初始化Ferrum设备
+
+        发送km.init()命令清除设备状态，确保设备处于就绪状态。
+        """
+        try:
+            # 清除串口缓冲区
+            if self._serial and self._serial.is_open:
+                self._serial.reset_input_buffer()
+                self._serial.reset_output_buffer()
+
+            # 发送初始化命令
+            result = self._send_command("km.init()")
+            logger.info(f"[Ferrum] 设备已初始化")
+
+        except FerrumConnectionError as e:
+            logger.error(f"[错误] Ferrum设备初始化失败: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"[错误] 初始化过程中发生未知错误: {e}")
+            raise FerrumConnectionError(f"设备初始化失败: {e}")
+
+    def wait(self, seconds: float) -> None:
+        """
+        等待指定时间
+
+        供ActionDispatcher调用的基础等待方法。
+
+        Args:
+            seconds: 等待时间（秒）
+        """
+        time.sleep(seconds)
 
     def __enter__(self):
         """上下文管理器入口"""
