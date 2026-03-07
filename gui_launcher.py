@@ -18,6 +18,7 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 from modules.character_detector import CharacterDetector
+from core.workflow_bootstrap import create_workflow_executor, ConfigLoadError
 
 
 class FerrumBotLauncher:
@@ -288,26 +289,55 @@ class FerrumBotLauncher:
         self.stop_btn.configure(state=tk.NORMAL)
 
     def _automation_worker(self):
-        """Worker thread for main automation."""
+        """Worker thread for main automation using config-driven workflow."""
         self._log("=" * 50)
         self._log("Starting main automation...")
         self._log(f"Account: {self.account_info['account_hash'][:24]}...")
         self._log(f"Characters: {self.account_info['character_count']}")
 
         try:
-            # Main automation loop would go here
-            # For now, just simulate work
-            import time
+            # Load workflow from config
+            workflow_path = Path(__file__).parent / 'config' / 'workflows' / 'guild_donation.yaml'
+            self._log(f"Loading workflow: {workflow_path}")
 
-            for i in range(10):
-                if self.stop_event.is_set():
-                    self._log("Automation stopped by user")
-                    return
+            # Initialize controller and vision engine
+            # For now, use mock implementations that log actions
+            controller = self._create_controller()
+            vision_engine = self._create_vision_engine()
 
-                self._log(f"Processing character {i + 1}...")
-                time.sleep(0.5)
+            # Create workflow executor via bootstrap
+            try:
+                executor = create_workflow_executor(
+                    workflow_path=workflow_path,
+                    controller=controller,
+                    vision_engine=vision_engine
+                )
+                self._log("Workflow executor created successfully")
+            except ConfigLoadError as e:
+                self._log(f"Configuration error: {e}")
+                return
+            except FileNotFoundError:
+                self._log(f"Workflow config not found: {workflow_path}")
+                self._log("Using fallback simulation mode")
+                self._simulate_automation()
+                return
 
-            self._log("Automation completed!")
+            # Execute workflow with stop event checking
+            self._log(f"Executing workflow: {executor.workflow.name}")
+            self._log(f"Total steps defined: {len(executor.workflow.steps)}")
+
+            # Run the workflow
+            result = executor.execute()
+
+            if result.success:
+                self._log(f"Automation completed successfully!")
+                self._log(f"Steps executed: {result.steps_executed}")
+                self._log(f"Duration: {result.duration_ms:.1f}ms")
+            else:
+                self._log(f"Automation failed!")
+                if result.error:
+                    self._log(f"Error: {result.error}")
+                self._log(f"Steps executed before failure: {result.steps_executed}")
 
         except Exception as e:
             self._log(f"Automation error: {e}")
@@ -316,6 +346,81 @@ class FerrumBotLauncher:
 
         finally:
             self.root.after(0, self._reset_buttons)
+
+    def _create_controller(self):
+        """Create a controller that respects the stop event."""
+        class StoppableController:
+            def __init__(self, stop_event, log_callback):
+                self.stop_event = stop_event
+                self.log = log_callback
+                self._wait = __import__('time').sleep
+
+            def click(self, x, y):
+                if self.stop_event.is_set():
+                    raise InterruptedError("Automation stopped")
+                self.log(f"  [Action] Click at ({x}, {y})")
+
+            def wait(self, seconds):
+                # Check stop event periodically during wait
+                check_interval = 0.1
+                elapsed = 0
+                while elapsed < seconds:
+                    if self.stop_event.is_set():
+                        raise InterruptedError("Automation stopped")
+                    self._wait(check_interval)
+                    elapsed += check_interval
+
+            def press(self, key_name):
+                if self.stop_event.is_set():
+                    raise InterruptedError("Automation stopped")
+                self.log(f"  [Action] Press key: {key_name}")
+
+            def scroll(self, direction, ticks):
+                if self.stop_event.is_set():
+                    raise InterruptedError("Automation stopped")
+                self.log(f"  [Action] Scroll {direction} {ticks} tick(s)")
+
+        return StoppableController(self.stop_event, self._log)
+
+    def _create_vision_engine(self):
+        """Create a vision engine that respects the stop event."""
+        class MockVisionEngine:
+            def __init__(self, stop_event):
+                self.stop_event = stop_event
+                self._find_element_calls = 0
+
+            def find_element(self, screenshot, template_path, roi=None, threshold=0.8):
+                """Mock find element - returns True for guild_flag_mark, False otherwise."""
+                if self.stop_event.is_set():
+                    raise InterruptedError("Automation stopped")
+
+                self._find_element_calls += 1
+
+                # Simulate detection based on template
+                if 'guild_flag_mark' in template_path:
+                    # Simulate menu detection (return True after a few attempts)
+                    return (self._find_element_calls >= 2, 0.85, (100, 100))
+                elif 'btn_quick_switch' in template_path:
+                    # Simulate having more characters (return True a few times)
+                    return (self._find_element_calls < 5, 0.82, (100, 100))
+                else:
+                    return (False, 0.0, None)
+
+        return MockVisionEngine(self.stop_event)
+
+    def _simulate_automation(self):
+        """Fallback simulation when workflow config is not available."""
+        import time
+
+        for i in range(min(10, self.account_info.get('character_count', 10))):
+            if self.stop_event.is_set():
+                self._log("Automation stopped by user")
+                return
+
+            self._log(f"Processing character {i + 1}...")
+            time.sleep(0.5)
+
+        self._log("Simulation completed!")
 
     def _stop_task(self):
         """Stop the current task."""

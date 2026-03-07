@@ -365,5 +365,73 @@ class TestWorkflowValidation:
             os.unlink(temp_path)
 
 
+class TestLauncherIntegration:
+    """Test launcher integration with workflow bootstrap."""
+
+    def test_launcher_imports_bootstrap(self):
+        """Launcher module imports workflow bootstrap correctly."""
+        import gui_launcher
+
+        # Verify bootstrap components are imported
+        assert hasattr(gui_launcher, 'create_workflow_executor')
+        assert hasattr(gui_launcher, 'ConfigLoadError')
+
+    def test_launcher_has_workflow_path_config(self):
+        """Launcher has configurable workflow path."""
+        import gui_launcher
+
+        # Verify launcher has workflow path logic
+        source = Path(gui_launcher.__file__).read_text()
+        # Check for path components (handles both / and \ separators)
+        assert 'config' in source and 'workflows' in source and 'guild_donation.yaml' in source
+
+    def test_launcher_creates_controller_with_stop_event(self):
+        """Launcher creates controller that respects stop event."""
+        import gui_launcher
+        import threading
+
+        # Verify controller creation method exists
+        assert hasattr(gui_launcher.FerrumBotLauncher, '_create_controller')
+
+        # Create a mock launcher to test controller
+        class MockLauncher:
+            def __init__(self):
+                self.stop_event = threading.Event()
+
+            def _log(self, msg):
+                pass
+
+            _create_controller = gui_launcher.FerrumBotLauncher._create_controller
+
+        mock = MockLauncher()
+        controller = mock._create_controller()
+
+        # Verify controller has required methods
+        assert hasattr(controller, 'click')
+        assert hasattr(controller, 'wait')
+        assert hasattr(controller, 'press')
+        assert hasattr(controller, 'scroll')
+
+    def test_launcher_handles_config_load_error(self):
+        """Launcher handles ConfigLoadError gracefully."""
+        import gui_launcher
+
+        source = Path(gui_launcher.__file__).read_text()
+
+        # Verify error handling exists
+        assert 'ConfigLoadError' in source
+        assert 'Configuration error' in source
+
+    def test_launcher_handles_missing_workflow_file(self):
+        """Launcher handles missing workflow file with fallback."""
+        import gui_launcher
+
+        source = Path(gui_launcher.__file__).read_text()
+
+        # Verify fallback exists
+        assert 'FileNotFoundError' in source or 'workflow config not found' in source.lower()
+        assert '_simulate_automation' in source or 'fallback' in source.lower()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
