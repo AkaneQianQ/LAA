@@ -48,8 +48,9 @@ Phase 2: Configuration System          ✓ Complete (3/3 plans)
   Plan 01: YAML Configuration Foundation ✓ Complete
   Plan 02: Workflow Executor             ✓ Complete
   Plan 03: Workflow Bootstrap            ✓ Complete
-Phase 3: Intelligent Wait System       ○ In Progress (1/3 plans)
+Phase 3: Intelligent Wait System       ○ In Progress (2/3 plans)
   Plan 01: Schema Contracts            ✓ Complete
+  Plan 02: Wait Image Runtime          ✓ Complete
 Phase 4: Error Recovery & ACE          ○ Not started
 Phase 5: Performance & Multi-Account   ○ Not started
 ```
@@ -71,8 +72,8 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 
 ## Active Context
 
-**Last Action:** Completed Plan 03-01: Intelligent Wait Schema Contracts
-**Next Action:** Continue with Plan 03-02: Wait Image Runtime Semantics
+**Last Action:** Completed Plan 03-02: Wait Image Runtime Semantics
+**Next Action:** Continue with Plan 03-03: Guild Workflow Migration
 
 **Blockers:** None
 
@@ -101,6 +102,10 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 - WaitDefaults model for global timeout/poll/retry configuration
 - Step-level retry_interval_ms override support
 - Backward compatibility preserved for legacy wait actions
+- Plan 03-02 completed with 9 new tests (125 total)
+- wait_image runtime with 2-hit stability gating
+- Executor retry interval with step-level override
+- Timeout errors flow through executor retry lifecycle
 
 ---
 
@@ -134,6 +139,9 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 | 2026-03-07 | Explicit state field with Literal[appear, disappear] | Type safety |
 | 2026-03-07 | Three-tier override hierarchy (action/step/workflow) | Configuration flexibility |
 | 2026-03-07 | Legacy wait(duration_ms) preserved for phased migration | Backward compatibility |
+| 2026-03-07 | 2-hit stability for image state changes | Prevents flickering false positives |
+| 2026-03-07 | Executor single retry authority | No parallel retry systems |
+| 2026-03-07 | Monotonic clock for timeout deadlines | Prevents clock skew issues |
 
 ---
 
@@ -158,7 +166,8 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 | 02 | 02 | 20 min | 2 | 3 |
 | 02 | 03 | 3 min | 2 | 4 |
 | 03 | 01 | 8 min | 2 | 2 |
+| 03 | 02 | 20 min | 2 | 5 |
 
 ---
 
-*State updated: 2026-03-07 after completing 03-01 (Phase 3 in progress)*
+*State updated: 2026-03-07 after completing 03-02 (Phase 3 in progress)*

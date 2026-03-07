@@ -86,7 +86,7 @@
 
 Plans:
 - [x] 03-01-PLAN.md — Add intelligent wait schema contracts and validation coverage
-- [ ] 03-02-PLAN.md — Implement wait_image runtime semantics and executor retry interval handling
+- [x] 03-02-PLAN.md — Implement wait_image runtime semantics and executor retry interval handling
 - [ ] 03-03-PLAN.md — Migrate guild workflow waits and update integration tests for end-to-end intelligent wait behavior
 
 **Requirements:**
