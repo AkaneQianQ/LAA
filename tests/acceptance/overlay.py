@@ -66,11 +66,11 @@ class OverlayWindow:
         self.root = tk.Tk()
         self.root.title("LostarkBot 验收测试")
 
-        # Window configuration
-        self.root.geometry("300x220+20+20")  # Size 300x220, position (20, 20)
+        # Window configuration - horizontal layout
+        self.root.geometry("750x140+20+20")  # Size 750x140, position (20, 20)
         self.root.overrideredirect(True)     # Remove window decorations
         self.root.attributes('-topmost', True)  # Keep on top
-        self.root.attributes('-alpha', 0.75)    # 75% opacity
+        self.root.attributes('-alpha', 0.85)    # Slightly more opaque for readability
 
         # Make background transparent (Windows)
         try:
@@ -88,60 +88,84 @@ class OverlayWindow:
         self._start_update_loop()
 
     def _create_ui(self):
-        """Create the UI components."""
+        """Create the UI components - horizontal layout."""
         # Main frame with dark background
-        main_frame = tk.Frame(self.root, bg='black', padx=10, pady=8)
+        main_frame = tk.Frame(self.root, bg='black', padx=12, pady=8)
         main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Title bar with drag hint
+        # Title bar with drag hint (top row)
         title_frame = tk.Frame(main_frame, bg='black')
-        title_frame.pack(fill=tk.X, pady=(0, 5))
+        title_frame.pack(fill=tk.X, pady=(0, 6))
 
         title_label = tk.Label(
             title_frame,
-            text="LostarkBot 验收测试",
+            text="▶ LostarkBot 验收测试",
             font=('Microsoft YaHei', 11, 'bold'),
-            fg='white',
+            fg='#3498db',
             bg='black'
         )
         title_label.pack(side=tk.LEFT)
 
-        drag_label = tk.Label(
+        self._total_progress_label = tk.Label(
             title_frame,
-            text="[拖拽移动]",
-            font=('Microsoft YaHei', 8),
+            text="总进度 ░░░░░░░░░░ 0%",
+            font=('Consolas', 9),
             fg='#888888',
             bg='black'
         )
-        drag_label.pack(side=tk.RIGHT)
+        self._total_progress_label.pack(side=tk.RIGHT)
+
+        drag_label = tk.Label(
+            title_frame,
+            text="[拖拽]",
+            font=('Microsoft YaHei', 8),
+            fg='#666666',
+            bg='black'
+        )
+        drag_label.pack(side=tk.RIGHT, padx=10)
 
         # Separator
         separator = tk.Frame(main_frame, height=1, bg='#444444')
-        separator.pack(fill=tk.X, pady=2)
+        separator.pack(fill=tk.X, pady=(0, 8))
 
-        # Phase info section
-        phase_frame = tk.Frame(main_frame, bg='black')
-        phase_frame.pack(fill=tk.X, pady=3)
+        # Content frame - horizontal layout
+        content_frame = tk.Frame(main_frame, bg='black')
+        content_frame.pack(fill=tk.BOTH, expand=True)
+
+        # === LEFT COLUMN: Phase Info (width ~180) ===
+        left_frame = tk.Frame(content_frame, bg='black', width=180)
+        left_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 15))
+        left_frame.pack_propagate(False)
 
         self._phase_label = tk.Label(
-            phase_frame,
-            text=f"Phase {self._current_phase_num}/{self._total_phases}  {self._phase_name}",
-            font=('Microsoft YaHei', 10),
+            left_frame,
+            text=f"Phase {self._current_phase_num}/{self._total_phases}",
+            font=('Microsoft YaHei', 12, 'bold'),
             fg='white',
             bg='black'
         )
         self._phase_label.pack(anchor=tk.W)
 
-        # Phase progress bar
+        phase_name_label = tk.Label(
+            left_frame,
+            textvariable=tk.StringVar(value=self._phase_name),
+            font=('Microsoft YaHei', 10),
+            fg='#AAAAAA',
+            bg='black'
+        )
+        phase_name_label.pack(anchor=tk.W, pady=(2, 0))
+        self._phase_name_label = phase_name_label
+
+        # Progress bar under phase
         self._phase_progress_var = tk.DoubleVar(value=0)
         self._phase_progress = ttk.Progressbar(
-            phase_frame,
+            left_frame,
             variable=self._phase_progress_var,
             maximum=100,
-            length=280,
+            length=160,
             mode='determinate'
         )
-        self._phase_progress.pack(fill=tk.X, pady=2)
+        self._phase_progress.pack(anchor=tk.W, pady=(5, 0))
 
         # Style the progress bar
         style = ttk.Style()
@@ -155,59 +179,58 @@ class OverlayWindow:
             darkcolor='#2980b9'
         )
 
-        # Status section
+        # === MIDDLE COLUMN: Status & F1 (width ~200) ===
+        middle_frame = tk.Frame(content_frame, bg='black', width=200)
+        middle_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 15))
+        middle_frame.pack_propagate(False)
+
+        # Status with icon
         self._status_label = tk.Label(
-            main_frame,
-            text="状态: ⏳ 等待用户确认",
-            font=('Microsoft YaHei', 9),
+            middle_frame,
+            text="⏳ 等待用户确认",
+            font=('Microsoft YaHei', 11),
             fg=self.STATUS_COLORS['waiting'],
             bg='black'
         )
-        self._status_label.pack(anchor=tk.W, pady=3)
+        self._status_label.pack(anchor=tk.W, pady=(5, 0))
 
-        # F1 hint
+        # F1 hint - prominent
         self._f1_hint_label = tk.Label(
-            main_frame,
-            text="[按 F1 继续]",
-            font=('Microsoft YaHei', 9, 'bold'),
+            middle_frame,
+            text="↳ 按 F1 继续",
+            font=('Microsoft YaHei', 14, 'bold'),
             fg='#f39c12',
             bg='black'
         )
-        self._f1_hint_label.pack(anchor=tk.W)
+        self._f1_hint_label.pack(anchor=tk.W, pady=(8, 0))
 
-        # Separator
-        separator2 = tk.Frame(main_frame, height=1, bg='#444444')
-        separator2.pack(fill=tk.X, pady=5)
+        # === RIGHT COLUMN: Logs (width ~280) ===
+        right_frame = tk.Frame(content_frame, bg='#1a1a1a', width=280)
+        right_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        right_frame.pack_propagate(False)
 
-        # Total progress section
-        total_progress_frame = tk.Frame(main_frame, bg='black')
-        total_progress_frame.pack(fill=tk.X)
-
-        self._total_progress_var = tk.DoubleVar(value=0)
-        self._total_progress_label = tk.Label(
-            total_progress_frame,
-            text="总进度 ▓▓▓▓░░░░░░ 40%",
-            font=('Microsoft YaHei', 9),
-            fg='white',
-            bg='black'
+        # Log header
+        log_header = tk.Label(
+            right_frame,
+            text="最近日志",
+            font=('Microsoft YaHei', 8),
+            fg='#666666',
+            bg='#1a1a1a'
         )
-        self._total_progress_label.pack(anchor=tk.W)
+        log_header.pack(anchor=tk.W, padx=8, pady=(4, 2))
 
-        # Log section (last 3 lines)
-        log_frame = tk.Frame(main_frame, bg='black')
-        log_frame.pack(fill=tk.X, pady=(5, 0))
-
+        # Log lines
         self._log_labels = []
         for i in range(self._max_logs):
             label = tk.Label(
-                log_frame,
+                right_frame,
                 text="",
-                font=('Microsoft YaHei', 8),
+                font=('Consolas', 9),
                 fg='#aaaaaa',
-                bg='black',
+                bg='#1a1a1a',
                 anchor=tk.W
             )
-            label.pack(anchor=tk.W)
+            label.pack(anchor=tk.W, padx=8)
             self._log_labels.append(label)
 
         # Initialize with empty logs
@@ -273,8 +296,12 @@ class OverlayWindow:
 
         if self._phase_label and self.root and self.root.winfo_exists():
             self._phase_label.config(
-                text=f"Phase {phase_num}/{total_phases}  {phase_name}"
+                text=f"Phase {phase_num}/{total_phases}"
             )
+
+        # Update phase name label
+        if hasattr(self, '_phase_name_label') and self._phase_name_label:
+            self._phase_name_label.config(text=phase_name)
 
         # Update phase progress
         if self._phase_progress_var and total_phases > 0:
