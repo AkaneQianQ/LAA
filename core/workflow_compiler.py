@@ -86,7 +86,8 @@ def compile_workflow(config: WorkflowConfig) -> CompiledWorkflow:
         name=config.name,
         start_step_id=config.start_step_id,
         steps=config.steps,
-        step_index=step_index
+        step_index=step_index,
+        wait_defaults=config.wait_defaults
     )
 
 

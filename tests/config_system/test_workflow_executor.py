@@ -549,5 +549,451 @@ class TestExecutionResult:
         assert result.error is None
 
 
+class TestWaitImageRuntime:
+    """Test wait_image action runtime behavior with appear/disappear states."""
+
+    def test_wait_image_appear_succeeds_after_two_consecutive_hits(self):
+        """wait_image with state=appear succeeds only after two consecutive positive evaluations."""
+        from core.workflow_schema import WorkflowConfig, WaitImageAction, WorkflowStep
+        from core.workflow_compiler import compile_workflow
+        from core.workflow_executor import WorkflowExecutor
+        from core.workflow_runtime import ActionDispatcher, ConditionEvaluator
+        from unittest.mock import Mock, patch
+
+        # Create workflow with wait_image action
+        config = {
+            'name': 'wait_image_workflow',
+            'start_step_id': 'wait_step',
+            'steps': [
+                {
+                    'step_id': 'wait_step',
+                    'action': {
+                        'type': 'wait_image',
+                        'state': 'appear',
+                        'image': 'btn_login.png',
+                        'roi': [100, 100, 200, 200],
+                        'timeout_ms': 5000,
+                        'poll_interval_ms': 50
+                    },
+                    'next': None
+                }
+            ]
+        }
+
+        workflow = WorkflowConfig.model_validate(config)
+        compiled = compile_workflow(workflow)
+
+        # Mock controller and vision engine
+        mock_controller = Mock()
+        mock_vision = Mock()
+
+        # Simulate: not found, not found, found, found (2-hit stability required)
+        mock_vision.find_element.side_effect = [
+            (False, 0.3, None),   # Poll 1: not found
+            (False, 0.4, None),   # Poll 2: not found
+            (True, 0.95, (150, 150)),   # Poll 3: found (1st hit)
+            (True, 0.96, (150, 150)),   # Poll 4: found (2nd hit - success)
+        ]
+
+        dispatcher = ActionDispatcher(mock_controller, vision_engine=mock_vision)
+        condition = ConditionEvaluator(mock_vision)
+
+        executor = WorkflowExecutor(compiled, dispatcher, condition)
+        result = executor.execute()
+
+        assert result.success is True
+        assert result.steps_executed == 1
+        # Should have polled 4 times (2 negative, 2 positive for stability)
+        assert mock_vision.find_element.call_count == 4
+
+    def test_wait_image_disappear_succeeds_after_two_consecutive_misses(self):
+        """wait_image with state=disappear succeeds only after two consecutive negative evaluations."""
+        from core.workflow_schema import WorkflowConfig
+        from core.workflow_compiler import compile_workflow
+        from core.workflow_executor import WorkflowExecutor
+        from core.workflow_runtime import ActionDispatcher, ConditionEvaluator
+        from unittest.mock import Mock
+
+        config = {
+            'name': 'wait_image_workflow',
+            'start_step_id': 'wait_step',
+            'steps': [
+                {
+                    'step_id': 'wait_step',
+                    'action': {
+                        'type': 'wait_image',
+                        'state': 'disappear',
+                        'image': 'loading_spinner.png',
+                        'roi': [500, 500, 600, 600],
+                        'timeout_ms': 5000,
+                        'poll_interval_ms': 50
+                    },
+                    'next': None
+                }
+            ]
+        }
+
+        workflow = WorkflowConfig.model_validate(config)
+        compiled = compile_workflow(workflow)
+
+        mock_controller = Mock()
+        mock_vision = Mock()
+
+        # Simulate: found, found, not found, not found (2-hit stability required)
+        mock_vision.find_element.side_effect = [
+            (True, 0.9, (550, 550)),    # Poll 1: found
+            (True, 0.91, (550, 550)),   # Poll 2: found
+            (False, 0.2, None),         # Poll 3: not found (1st miss)
+            (False, 0.1, None),         # Poll 4: not found (2nd miss - success)
+        ]
+
+        dispatcher = ActionDispatcher(mock_controller, vision_engine=mock_vision)
+        condition = ConditionEvaluator(mock_vision)
+
+        executor = WorkflowExecutor(compiled, dispatcher, condition)
+        result = executor.execute()
+
+        assert result.success is True
+        assert result.steps_executed == 1
+        # Should have polled 4 times (2 positive, 2 negative for stability)
+        assert mock_vision.find_element.call_count == 4
+
+    def test_wait_image_timeout_raises_execution_error(self):
+        """wait_image timeout expiration raises ExecutionError."""
+        from core.workflow_schema import WorkflowConfig
+        from core.workflow_compiler import compile_workflow
+        from core.workflow_executor import WorkflowExecutor, ExecutionError
+        from core.workflow_runtime import ActionDispatcher, ConditionEvaluator
+        from unittest.mock import Mock
+
+        config = {
+            'name': 'wait_image_workflow',
+            'start_step_id': 'wait_step',
+            'wait_defaults': {
+                'timeout_ms': 100,  # Very short timeout for testing
+                'poll_interval_ms': 10
+            },
+            'steps': [
+                {
+                    'step_id': 'wait_step',
+                    'action': {
+                        'type': 'wait_image',
+                        'state': 'appear',
+                        'image': 'never_appears.png',
+                        'roi': [100, 100, 200, 200]
+                        # Uses workflow default timeout
+                    },
+                    'next': None
+                }
+            ]
+        }
+
+        workflow = WorkflowConfig.model_validate(config)
+        compiled = compile_workflow(workflow)
+
+        mock_controller = Mock()
+        mock_vision = Mock()
+        # Image never appears
+        mock_vision.find_element.return_value = (False, 0.1, None)
+
+        dispatcher = ActionDispatcher(mock_controller, vision_engine=mock_vision)
+        condition = ConditionEvaluator(mock_vision)
+
+        executor = WorkflowExecutor(compiled, dispatcher, condition)
+        result = executor.execute()
+
+        assert result.success is False
+        assert result.error is not None
+        assert isinstance(result.error, ExecutionError)
+        assert "timeout" in str(result.error).lower()
+
+    def test_wait_image_appear_single_hit_not_enough(self):
+        """wait_image appear requires 2 consecutive hits - single hit is not enough."""
+        from core.workflow_schema import WorkflowConfig
+        from core.workflow_compiler import compile_workflow
+        from core.workflow_executor import WorkflowExecutor
+        from core.workflow_runtime import ActionDispatcher, ConditionEvaluator
+        from unittest.mock import Mock
+
+        config = {
+            'name': 'wait_image_workflow',
+            'start_step_id': 'wait_step',
+            'steps': [
+                {
+                    'step_id': 'wait_step',
+                    'action': {
+                        'type': 'wait_image',
+                        'state': 'appear',
+                        'image': 'btn_login.png',
+                        'roi': [100, 100, 200, 200],
+                        'timeout_ms': 500,
+                        'poll_interval_ms': 50
+                    },
+                    'next': None
+                }
+            ]
+        }
+
+        workflow = WorkflowConfig.model_validate(config)
+        compiled = compile_workflow(workflow)
+
+        mock_controller = Mock()
+        mock_vision = Mock()
+
+        # Simulate: not found, found (single hit), not found (lost again)
+        # This should eventually timeout because we never got 2 consecutive hits
+        mock_vision.find_element.side_effect = [
+            (False, 0.3, None),         # Poll 1: not found
+            (True, 0.95, (150, 150)),   # Poll 2: found (1st hit - need one more)
+            (False, 0.4, None),         # Poll 3: not found (reset counter)
+            (False, 0.3, None),         # Poll 4: not found
+            (False, 0.2, None),         # Poll 5: not found
+            (False, 0.1, None),         # Poll 6: not found (will timeout)
+        ]
+
+        dispatcher = ActionDispatcher(mock_controller, vision_engine=mock_vision)
+        condition = ConditionEvaluator(mock_vision)
+
+        executor = WorkflowExecutor(compiled, dispatcher, condition)
+        result = executor.execute()
+
+        # Should fail due to timeout (never got 2 consecutive hits)
+        assert result.success is False
+        assert "timeout" in str(result.error).lower()
+
+    def test_wait_image_dispatches_correctly(self):
+        """ActionDispatcher correctly handles wait_image action type."""
+        from core.workflow_schema import WaitImageAction, WorkflowStep
+        from core.workflow_runtime import ActionDispatcher
+        from unittest.mock import Mock, patch
+        import time
+
+        mock_controller = Mock()
+        dispatcher = ActionDispatcher(mock_controller)
+
+        step = WorkflowStep(
+            step_id='test',
+            action=WaitImageAction(
+                type='wait_image',
+                state='appear',
+                image='btn_login.png',
+                roi=(100, 100, 200, 200),
+                timeout_ms=100,
+                poll_interval_ms=10
+            )
+        )
+
+        # Mock the _dispatch_wait_image method to avoid actual waiting
+        with patch.object(dispatcher, '_dispatch_wait_image') as mock_wait:
+            mock_wait.return_value = None
+            dispatcher.dispatch(step)
+            mock_wait.assert_called_once()
+
+
+class TestRetryInterval:
+    """Test retry interval semantics in executor retry loop."""
+
+    def test_retry_interval_waits_between_attempts(self):
+        """Failed step with retries waits configured interval before next attempt."""
+        from core.workflow_schema import WorkflowConfig
+        from core.workflow_compiler import compile_workflow
+        from core.workflow_executor import WorkflowExecutor, ExecutionError
+        from unittest.mock import Mock, patch
+        import time
+
+        config = {
+            'name': 'retry_interval_workflow',
+            'start_step_id': 'step1',
+            'wait_defaults': {
+                'retry_interval_ms': 100  # 100ms between retries
+            },
+            'steps': [
+                {
+                    'step_id': 'step1',
+                    'action': {'type': 'click', 'x': 100, 'y': 200},
+                    'next': None,
+                    'retry': 2  # 2 retries
+                }
+            ]
+        }
+
+        workflow = WorkflowConfig.model_validate(config)
+        compiled = compile_workflow(workflow)
+
+        mock_dispatcher = Mock()
+        mock_dispatcher.dispatch.side_effect = [
+            ExecutionError("Attempt 1 failed"),
+            ExecutionError("Attempt 2 failed"),
+            None  # Success on 3rd try
+        ]
+        mock_condition = Mock()
+
+        executor = WorkflowExecutor(compiled, mock_dispatcher, mock_condition)
+
+        # Track sleep calls
+        sleep_calls = []
+        original_sleep = time.sleep
+
+        def mock_sleep(duration):
+            sleep_calls.append(duration)
+            # Don't actually sleep to speed up test
+
+        with patch('time.sleep', mock_sleep):
+            result = executor.execute()
+
+        assert result.success is True
+        # Should have 2 sleep calls (between 3 attempts)
+        assert len(sleep_calls) == 2
+        # Each sleep should be ~0.1s (100ms)
+        assert all(0.09 <= s <= 0.11 for s in sleep_calls)
+
+    def test_step_level_retry_interval_overrides_default(self):
+        """Step-level retry_interval_ms overrides workflow default."""
+        from core.workflow_schema import WorkflowConfig
+        from core.workflow_compiler import compile_workflow
+        from core.workflow_executor import WorkflowExecutor, ExecutionError
+        from unittest.mock import Mock, patch
+        import time
+
+        config = {
+            'name': 'retry_interval_workflow',
+            'start_step_id': 'step1',
+            'wait_defaults': {
+                'retry_interval_ms': 1000  # 1s default (should be overridden)
+            },
+            'steps': [
+                {
+                    'step_id': 'step1',
+                    'action': {'type': 'click', 'x': 100, 'y': 200},
+                    'next': None,
+                    'retry': 1,
+                    'retry_interval_ms': 50  # Override: 50ms
+                }
+            ]
+        }
+
+        workflow = WorkflowConfig.model_validate(config)
+        compiled = compile_workflow(workflow)
+
+        mock_dispatcher = Mock()
+        mock_dispatcher.dispatch.side_effect = [
+            ExecutionError("Attempt 1 failed"),
+            None  # Success on 2nd try
+        ]
+        mock_condition = Mock()
+
+        executor = WorkflowExecutor(compiled, mock_dispatcher, mock_condition)
+
+        sleep_calls = []
+
+        def mock_sleep(duration):
+            sleep_calls.append(duration)
+
+        with patch('time.sleep', mock_sleep):
+            result = executor.execute()
+
+        assert result.success is True
+        assert len(sleep_calls) == 1
+        # Should use step-level override (50ms), not default (1000ms)
+        assert 0.04 <= sleep_calls[0] <= 0.06
+
+    def test_max_retries_still_terminates_with_failure(self):
+        """Max retries still terminates with final failure."""
+        from core.workflow_schema import WorkflowConfig
+        from core.workflow_compiler import compile_workflow
+        from core.workflow_executor import WorkflowExecutor, ExecutionError
+        from unittest.mock import Mock, patch
+        import time
+
+        config = {
+            'name': 'retry_fail_workflow',
+            'start_step_id': 'step1',
+            'wait_defaults': {
+                'retry_interval_ms': 10  # Fast for testing
+            },
+            'steps': [
+                {
+                    'step_id': 'step1',
+                    'action': {'type': 'click', 'x': 100, 'y': 200},
+                    'next': None,
+                    'retry': 2  # 2 retries = 3 total attempts
+                }
+            ]
+        }
+
+        workflow = WorkflowConfig.model_validate(config)
+        compiled = compile_workflow(workflow)
+
+        mock_dispatcher = Mock()
+        # Always fails
+        mock_dispatcher.dispatch.side_effect = ExecutionError("Always fails")
+        mock_condition = Mock()
+
+        executor = WorkflowExecutor(compiled, mock_dispatcher, mock_condition)
+
+        with patch('time.sleep'):
+            result = executor.execute()
+
+        assert result.success is False
+        assert result.error is not None
+        assert "Always fails" in str(result.error)
+        # Should have tried 3 times (initial + 2 retries)
+        assert mock_dispatcher.dispatch.call_count == 3
+
+    def test_timeout_errors_flow_through_executor_retry(self):
+        """Timeout errors from wait_image are retried via existing step.retry."""
+        from core.workflow_schema import WorkflowConfig
+        from core.workflow_compiler import compile_workflow
+        from core.workflow_executor import WorkflowExecutor, ExecutionError
+        from core.workflow_runtime import ActionDispatcher, ConditionEvaluator
+        from unittest.mock import Mock, patch
+        import time
+
+        config = {
+            'name': 'wait_retry_workflow',
+            'start_step_id': 'wait_step',
+            'wait_defaults': {
+                'timeout_ms': 50,  # Very short timeout
+                'poll_interval_ms': 10,
+                'retry_interval_ms': 20
+            },
+            'steps': [
+                {
+                    'step_id': 'wait_step',
+                    'action': {
+                        'type': 'wait_image',
+                        'state': 'appear',
+                        'image': 'btn_login.png',
+                        'roi': [100, 100, 200, 200]
+                    },
+                    'next': None,
+                    'retry': 2  # Retry timeout failures twice
+                }
+            ]
+        }
+
+        workflow = WorkflowConfig.model_validate(config)
+        compiled = compile_workflow(workflow)
+
+        mock_controller = Mock()
+        mock_vision = Mock()
+        # Image never appears - will always timeout
+        mock_vision.find_element.return_value = (False, 0.1, None)
+
+        dispatcher = ActionDispatcher(mock_controller, vision_engine=mock_vision)
+        condition = ConditionEvaluator(mock_vision)
+
+        executor = WorkflowExecutor(compiled, dispatcher, condition)
+
+        with patch('time.sleep'):
+            result = executor.execute()
+
+        # Should fail after all retries exhausted
+        assert result.success is False
+        assert result.error is not None
+        # Dispatcher should be called 3 times (initial + 2 retries)
+        # Each call attempts wait_image which times out
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

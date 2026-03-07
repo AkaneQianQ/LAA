@@ -265,12 +265,14 @@ class CompiledWorkflow:
         name: str,
         start_step_id: str,
         steps: List[WorkflowStep],
-        step_index: dict
+        step_index: dict,
+        wait_defaults: Optional[WaitDefaults] = None
     ):
         self.name = name
         self.start_step_id = start_step_id
         self.steps = steps
         self.step_index = step_index
+        self.wait_defaults = wait_defaults or WaitDefaults()
 
     def get_step(self, step_id: str) -> Optional[WorkflowStep]:
         """Get a step by its ID."""

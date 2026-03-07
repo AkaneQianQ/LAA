@@ -9,8 +9,9 @@ Exports:
     ConditionEvaluator: Evaluates image conditions using vision engine
 """
 
+import time
 from typing import Optional, Any, Tuple
-from core.workflow_schema import WorkflowStep, ClickAction, WaitAction, PressAction, ScrollAction
+from core.workflow_schema import WorkflowStep, ClickAction, WaitAction, PressAction, ScrollAction, WaitImageAction
 
 
 class ActionDispatcher:
@@ -20,14 +21,16 @@ class ActionDispatcher:
     Normalizes action parameters and translates them to controller calls.
     """
 
-    def __init__(self, controller: Any):
+    def __init__(self, controller: Any, vision_engine: Any = None):
         """
         Initialize the action dispatcher.
 
         Args:
             controller: Hardware controller with click, wait, press, scroll methods
+            vision_engine: Optional vision engine for image-based actions
         """
         self.controller = controller
+        self.vision = vision_engine
 
     def dispatch(self, step: WorkflowStep) -> None:
         """
@@ -52,6 +55,8 @@ class ActionDispatcher:
                 self._dispatch_press(action)
             elif isinstance(action, ScrollAction):
                 self._dispatch_scroll(action)
+            elif isinstance(action, WaitImageAction):
+                self._dispatch_wait_image(action, step)
             else:
                 raise ExecutionError(f"Unknown action type: {type(action)}")
         except Exception as e:
@@ -85,6 +90,146 @@ class ActionDispatcher:
     def _dispatch_scroll(self, action: ScrollAction) -> None:
         """Dispatch a scroll action."""
         self.controller.scroll(action.direction, action.ticks)
+
+    def _dispatch_wait_image(self, action: WaitImageAction, step: WorkflowStep) -> None:
+        """
+        Dispatch a wait_image action with intelligent polling and stability gating.
+
+        Waits for image to appear or disappear with 2-hit stability requirement.
+        Uses monotonic deadline control for timeout handling.
+
+        Args:
+            action: WaitImageAction with state, image, roi, timeout, poll_interval
+            step: Workflow step for accessing workflow defaults
+
+        Raises:
+            ExecutionError: On timeout or polling failure
+        """
+        from core.workflow_executor import ExecutionError
+
+        # Get timeout from action override, step, or workflow default
+        timeout_ms = self._resolve_timeout_ms(action, step)
+        poll_interval_ms = self._resolve_poll_interval_ms(action, step)
+
+        # Convert to seconds
+        timeout_sec = timeout_ms / 1000.0
+        poll_interval_sec = poll_interval_ms / 1000.0
+
+        # Calculate deadline using monotonic clock
+        deadline = time.monotonic() + timeout_sec
+
+        # Stability tracking: need 2 consecutive hits for success
+        consecutive_hits = 0
+        required_hits = 2
+
+        while time.monotonic() < deadline:
+            # Check current image state
+            is_present = self._check_image_present(action.image, action.roi)
+
+            if action.state == 'appear':
+                # For appear: success when image is present
+                if is_present:
+                    consecutive_hits += 1
+                    if consecutive_hits >= required_hits:
+                        return  # Success - image appeared with stability
+                else:
+                    consecutive_hits = 0  # Reset on miss
+            elif action.state == 'disappear':
+                # For disappear: success when image is absent
+                if not is_present:
+                    consecutive_hits += 1
+                    if consecutive_hits >= required_hits:
+                        return  # Success - image disappeared with stability
+                else:
+                    consecutive_hits = 0  # Reset on hit
+
+            # Wait before next poll
+            time.sleep(poll_interval_sec)
+
+        # Timeout reached
+        raise ExecutionError(
+            f"wait_image timeout: image '{action.image}' did not {action.state} "
+            f"within {timeout_ms}ms (required {required_hits} consecutive hits)"
+        )
+
+    def _resolve_timeout_ms(self, action: WaitImageAction, step: WorkflowStep) -> int:
+        """Resolve timeout with action > workflow priority."""
+        # Action-level override
+        if action.timeout_ms is not None:
+            return action.timeout_ms
+
+        # Workflow default if available (set by executor before dispatch)
+        workflow_defaults = getattr(self, '_workflow_defaults', None)
+        if workflow_defaults is not None:
+            return workflow_defaults.timeout_ms
+
+        # Fallback default
+        return 10000  # 10 seconds
+
+    def _resolve_poll_interval_ms(self, action: WaitImageAction, step: WorkflowStep) -> int:
+        """Resolve poll interval with action > workflow priority."""
+        # Action-level override
+        if action.poll_interval_ms is not None:
+            return action.poll_interval_ms
+
+        # Workflow default if available
+        workflow_defaults = getattr(self, '_workflow_defaults', None)
+        if workflow_defaults is not None:
+            return workflow_defaults.poll_interval_ms
+
+        # Fallback default
+        return 50  # 50ms
+
+    def _check_image_present(self, image: str, roi: Tuple[int, int, int, int]) -> bool:
+        """
+        Check if an image is present in the specified ROI.
+
+        Args:
+            image: Template image filename
+            roi: Region of interest as (x1, y1, x2, y2)
+
+        Returns:
+            True if image is found, False otherwise
+        """
+        if self.vision is None:
+            # No vision engine available - cannot check image presence
+            return False
+
+        try:
+            # Capture screenshot
+            screenshot = self._capture_screenshot()
+
+            # Use vision engine to find element
+            found, _, _ = self.vision.find_element(screenshot, image, roi=roi)
+            return found
+        except Exception:
+            return False
+
+    def _capture_screenshot(self) -> Any:
+        """Capture a screenshot using available methods."""
+        import numpy as np
+
+        # Try DXCam first
+        try:
+            import dxcam
+            import cv2
+            camera = dxcam.create()
+            screenshot = camera.grab()
+            if screenshot is not None:
+                return cv2.cvtColor(screenshot, cv2.COLOR_RGB2BGR)
+        except Exception:
+            pass
+
+        # Fallback to PIL
+        try:
+            from PIL import ImageGrab
+            screenshot = np.array(ImageGrab.grab())
+            import cv2
+            return cv2.cvtColor(screenshot, cv2.COLOR_RGB2BGR)
+        except Exception:
+            pass
+
+        return np.zeros((1440, 2560, 3), dtype=np.uint8)
 
 
 class ConditionEvaluator:
