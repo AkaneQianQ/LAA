@@ -67,8 +67,9 @@ Phase 3: Intelligent Wait System       ✓ Complete (3/3 plans)
   Plan 01: Schema Contracts            ✓ Complete
   Plan 02: Wait Image Runtime          ✓ Complete
   Plan 03: Guild Workflow Migration    ✓ Complete
-Phase 4: Error Recovery & ACE          ○ In Progress (1/6 plans)
+Phase 4: Error Recovery & ACE          ○ In Progress (2/6 plans)
   Plan 01: Recovery Contracts Schema   ✓ Complete
+  Plan 02: Runtime Recovery & Logging  ✓ Complete
 Phase 5: Performance & Multi-Account   ○ Not started
 ```
 
@@ -89,8 +90,8 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 
 ## Active Context
 
-**Last Action:** Completed Plan 04-01: Recovery Contracts Schema
-**Next Action:** Continue with Plan 04-02: Error Taxonomy and RecoveryOrchestrator
+**Last Action:** Completed Plan 04-02: Runtime Recovery and Structured Logging
+**Next Action:** Continue with Plan 04-03: ACE Compliance Guard
 
 **Blockers:** None
 
@@ -132,6 +133,11 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 - RecoveryConfig schema with anchor/on_timeout/max_escalations/audit_context
 - Compiler validation for recovery graph safety (missing targets, cycles)
 - Guild workflow with 6 recovery-annotated wait_image steps
+- Plan 04-02 completed with 32 new tests (196 total)
+- Error taxonomy with ErrorKind enum (network_lag, ui_timeout, disconnect, unknown)
+- RecoveryOrchestrator with L1/L2/L3 escalation state machine
+- ErrorLogger with JSONL output and daily file partitioning
+- WorkflowExecutor recovery integration with RoleSkipError
 
 ---
 
@@ -171,6 +177,11 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 | 2026-03-07 | RecoveryConfig with anchor/on_timeout/max_escalations | ERR-02 recovery schema |
 | 2026-03-07 | Compiler validates recovery graph safety | Fail-fast recovery validation |
 | 2026-03-07 | Guild workflow uses open_guild_menu as recovery anchor | ERR-02 implementation |
+| 2026-03-07 | ErrorKind enum with 5 classification types | ERR-01/02/03 error routing |
+| 2026-03-07 | Three-tier escalation L1 retry -> L2 rollback -> L3 skip | ERR-01/02/03 recovery policy |
+| 2026-03-07 | Circuit breaker pattern for same-kind failures | Infinite loop prevention |
+| 2026-03-07 | JSONL logging with daily file partitioning | ERR-04 evidence pipeline |
+| 2026-03-07 | RoleSkipError for graceful disconnect handling | ERR-03 no forced restart |
 
 ---
 
@@ -199,7 +210,8 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 | 03 | 02 | 20 min | 2 | 5 |
 | 03 | 03 | 25 min | 3 | 4 |
 | 04 | 01 | 25 min | 3 | 4 |
+| 04 | 02 | 20 min | 3 | 3 |
 
 ---
 
-*State updated: 2026-03-07 after completing 04-01*
+*State updated: 2026-03-07 after completing 04-02*

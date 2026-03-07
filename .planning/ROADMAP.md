@@ -109,14 +109,14 @@ Plans:
 
 **Goal:** Implement robust error recovery for network/UI issues and ensure all interactions comply with Tencent ACE anti-cheat detection.
 
-**Status:** In Progress (1/6 plans)
+**Status:** In Progress (2/6 plans)
 
 **Plans:**
 | Plan | Name | Status | Requirements |
 |------|------|--------|--------------|
 | 01 | Recovery Contracts Schema | ✓ Complete | ERR-02, ERR-04, ACE-02 |
-| 02 | Error Taxonomy & RecoveryOrchestrator | ○ Not started | ERR-01, ERR-02, ERR-03 |
-| 03 | Structured Logging & Evidence | ○ Not started | ERR-04 |
+| 02 | Error Taxonomy & RecoveryOrchestrator | ✓ Complete | ERR-01, ERR-02, ERR-03 |
+| 03 | Structured Logging & Evidence | ✓ Complete | ERR-04 |
 | 04 | ACE Compliance Guard | ○ Not started | ACE-01, ACE-03, ACE-04 |
 | 05 | Timing Jitter Engine | ○ Not started | ACE-02 |
 | 06 | Integration Testing | ○ Not started | ERR-01..04, ACE-01..04 |
