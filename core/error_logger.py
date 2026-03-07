@@ -10,7 +10,7 @@ Exports:
 
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any
 
@@ -54,7 +54,7 @@ class ErrorLogger:
         """
         # Build log record with required fields
         record = {
-            "ts": datetime.utcnow().isoformat() + "Z",
+            "ts": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "phase": context.phase,
             "step_id": context.step_id,
             "error_kind": error_kind.value,

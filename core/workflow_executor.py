@@ -2,7 +2,8 @@
 Workflow Executor Module
 
 Provides deterministic step execution for compiled workflows.
-Implements explicit cursor-based step progression with retry policy handling.
+Implements explicit cursor-based step progression with retry policy handling
+and recovery orchestration for error resilience.
 
 Exports:
     WorkflowExecutor: Main executor for running compiled workflows
@@ -11,13 +12,22 @@ Exports:
 """
 
 from typing import Optional, Any
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from core.workflow_compiler import CompiledWorkflow
 from core.workflow_schema import WorkflowStep
+from core.error_recovery import (
+    RecoveryOrchestrator, RecoveryAction, ErrorKind, classify_error, ErrorContext
+)
+from core.error_logger import ErrorLogger
 
 
 class ExecutionError(Exception):
     """Raised when a workflow step fails execution."""
+    pass
+
+
+class RoleSkipError(Exception):
+    """Raised when a role should be skipped (e.g., disconnect)."""
     pass
 
 
@@ -29,6 +39,7 @@ class ExecutionResult:
     final_step_id: Optional[str]
     error: Optional[Exception] = None
     duration_ms: Optional[float] = None
+    skipped_role: bool = False  # True if role was skipped due to disconnect/recovery
 
 
 class WorkflowExecutor:
@@ -49,7 +60,9 @@ class WorkflowExecutor:
         self,
         workflow: CompiledWorkflow,
         action_dispatcher: Any,
-        condition_evaluator: Any
+        condition_evaluator: Any,
+        error_logger: Optional[ErrorLogger] = None,
+        account_id: Optional[str] = None
     ):
         """
         Initialize the workflow executor.
@@ -58,16 +71,22 @@ class WorkflowExecutor:
             workflow: Compiled workflow to execute
             action_dispatcher: Object with dispatch(step) method for actions
             condition_evaluator: Object with evaluate(step, screenshot) method
+            error_logger: Optional ErrorLogger for structured error logging
+            account_id: Optional account ID for error context
         """
         self.workflow = workflow
         self.dispatcher = action_dispatcher
         self.condition = condition_evaluator
+        self.error_logger = error_logger or ErrorLogger()
+        self.account_id = account_id
         self.steps_executed = 0
         self.current_step_id: Optional[str] = None
+        self.orchestrator = RecoveryOrchestrator()
+        self._recovery_attempt_count: dict[str, int] = {}
 
     def execute(self) -> ExecutionResult:
         """
-        Execute the workflow from start to completion.
+        Execute the workflow from start to completion with recovery handling.
 
         Returns:
             ExecutionResult with success status and metadata
@@ -106,10 +125,21 @@ class WorkflowExecutor:
                         duration_ms=(time.time() - start_time) * 1000
                     )
 
-                # Execute step with retry logic
-                success, error = self._execute_step(step)
+                # Execute step with retry logic and recovery
+                success, error = self._execute_step_with_recovery(step)
 
                 if not success:
+                    # Check if this is a skip result (role skip, not failure)
+                    if isinstance(error, RoleSkipError):
+                        return ExecutionResult(
+                            success=True,  # Not a failure, just skipped
+                            steps_executed=self.steps_executed,
+                            final_step_id=last_executed_step_id,
+                            error=None,
+                            duration_ms=(time.time() - start_time) * 1000,
+                            skipped_role=True
+                        )
+
                     return ExecutionResult(
                         success=False,
                         steps_executed=self.steps_executed,
@@ -188,6 +218,84 @@ class WorkflowExecutor:
                 return False, e
 
         return False, last_error
+
+    def _execute_step_with_recovery(
+        self,
+        step: WorkflowStep
+    ) -> tuple[bool, Optional[Exception]]:
+        """
+        Execute a step with recovery orchestration for timeout failures.
+
+        Routes wait_image timeouts through the classifier and orchestrator
+        to determine L1 retry, L2 rollback, or L3 skip actions.
+
+        Args:
+            step: The workflow step to execute
+
+        Returns:
+            Tuple of (success, error) - error may be RoleSkipError for L3
+        """
+        # Track recovery attempts for this step
+        step_key = step.step_id
+        recovery_attempt = self._recovery_attempt_count.get(step_key, 0)
+
+        # First, try normal step execution with retries
+        success, error = self._execute_step(step)
+
+        if success:
+            # Success - reset recovery state for this step
+            self.orchestrator.record_success(step_key)
+            self._recovery_attempt_count[step_key] = 0
+            return True, None
+
+        # Failure - classify the error
+        error_kind = classify_error(
+            error or Exception("Unknown error"),
+            {"step_id": step.step_id}
+        )
+
+        # Log the error
+        if self.error_logger:
+            context = ErrorContext(
+                phase="04",
+                step_id=step.step_id,
+                action_type=step.action.type if hasattr(step, 'action') else 'unknown',
+                attempt=recovery_attempt + 1,
+                account_id=self.account_id,
+                detail={"error": str(error), "recovery": True}
+            )
+            self.error_logger.log_error(error_kind, str(error) or "Step failed", context)
+
+        # Handle disconnect - immediate L3 skip
+        if error_kind == ErrorKind.DISCONNECT:
+            return False, RoleSkipError(f"Role skipped due to disconnect at step {step.step_id}")
+
+        # Determine recovery action
+        action = self.orchestrator.determine_action(
+            error_kind.value,
+            step_key,
+            recovery_attempt + 1
+        )
+
+        # Handle L2 rollback
+        if action == RecoveryAction.L2_ROLLBACK:
+            rollback_target = step.recovery.on_timeout if hasattr(step, 'recovery') else None
+            if rollback_target and self.workflow.get_step(rollback_target):
+                # Rollback to anchor step
+                self.current_step_id = rollback_target
+                self._recovery_attempt_count[step_key] = recovery_attempt + 1
+                # Return success to continue execution from anchor
+                return True, None
+            else:
+                # No valid rollback target - continue to failure
+                pass
+
+        # Handle L3 skip
+        if action == RecoveryAction.L3_SKIP:
+            return False, RoleSkipError(f"Role skipped after max escalations at step {step.step_id}")
+
+        # L1 retry already handled by _execute_step, or no recovery possible
+        return False, error
 
     def _resolve_retry_interval_ms(self, step: WorkflowStep) -> int:
         """
