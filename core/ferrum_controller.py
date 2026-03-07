@@ -272,6 +272,20 @@ class FerrumController:
         """
         return self._connected and self._serial is not None and self._serial.is_open
 
+
+    def _move(self, x: int, y: int) -> None:
+        """
+        发送相对鼠标移动命令
+
+        注意: km.move 使用相对坐标，不是绝对定位。
+        对于绝对定位，调用者必须跟踪当前位置并计算增量。
+
+        Args:
+            x: X方向相对移动（正数=右，负数=左）
+            y: Y方向相对移动（正数=下，负数=上）
+        """
+        self._send_command(f"km.move({x}, {y})")
+
     def click(self, x: int, y: int) -> None:
         """
         在指定坐标点击鼠标左键
@@ -285,7 +299,7 @@ class FerrumController:
         """
         self._validate_connection()
         # 移动鼠标（相对移动）
-        self._send_command(f"km.move({x}, {y})")
+        self._move(x, y)
         # 点击左键
         self._send_command(f"km.click({BUTTON_LEFT})")
         logger.debug(f"[Ferrum] 点击 ({x}, {y})")
