@@ -103,6 +103,17 @@ class WorkflowStep(BaseModel):
         None,
         description="Step ID to go to if condition is false"
     )
+    # Retry policy
+    retry: int = Field(
+        0,
+        ge=0,
+        description="Number of retry attempts on failure (0 = no retries)"
+    )
+    # Condition configuration for branching
+    condition: Optional[dict] = Field(
+        None,
+        description="Condition configuration for conditional branching"
+    )
 
     @model_validator(mode='after')
     def validate_routing(self):
