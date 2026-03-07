@@ -13,18 +13,43 @@ from typing import Optional, List, Dict
 logger = logging.getLogger(__name__)
 
 # HID Key Code Mapping (HID Usage Table 1.5)
+# Letters a-z: codes 4-29, Numbers 0-9: codes 30-39
 KEY_MAP: Dict[str, int] = {
-    "esc": 41,
-    "u": 24,
-    "up": 38,
-    "down": 40,
-    "left": 37,
-    "right": 39,
-    "enter": 40,
-    "alt": 226,  # Left Alt
-    "space": 44,
+    # Letters a-z
+    "a": 4, "b": 5, "c": 6, "d": 7, "e": 8, "f": 9,
+    "g": 10, "h": 11, "i": 12, "j": 13, "k": 14, "l": 15,
+    "m": 16, "n": 17, "o": 18, "p": 19, "q": 20, "r": 21,
+    "s": 22, "t": 23, "u": 24, "v": 25, "w": 26, "x": 27,
+    "y": 28, "z": 29,
+    # Numbers 0-9
+    "0": 30, "1": 31, "2": 32, "3": 33, "4": 34,
+    "5": 35, "6": 36, "7": 37, "8": 38, "9": 39,
+    # Special keys
+    "enter": 40, "return": 40,
+    "esc": 41, "escape": 41,
+    "backspace": 42, "bs": 42,
     "tab": 43,
+    "space": 44, "spacebar": 44,
+    # Arrow keys
+    "up": 38, "arrowup": 38,
+    "down": 40, "arrowdown": 40,
+    "left": 37, "arrowleft": 37,
+    "right": 39, "arrowright": 39,
+    # Modifier keys
+    "alt": 226, "lalt": 226, "leftalt": 226,
+    "ralt": 230, "rightalt": 230,
+    "ctrl": 224, "lctrl": 224, "leftctrl": 224, "control": 224,
+    "rctrl": 228, "rightctrl": 228,
+    "shift": 225, "lshift": 225, "leftshift": 225,
+    "rshift": 229, "rightshift": 229,
+    # Function keys F1-F12
+    "f1": 58, "f2": 59, "f3": 60, "f4": 61,
+    "f5": 62, "f6": 63, "f7": 64, "f8": 65,
+    "f9": 66, "f10": 67, "f11": 68, "f12": 69,
 }
+
+# HID modifier codes for ordering (modifiers should be pressed first)
+MODIFIER_CODES = {224, 225, 226, 228, 229, 230}
 
 # Mouse Button Constants (per Ferrum documentation)
 BUTTON_LEFT = 0
@@ -327,6 +352,20 @@ class FerrumController:
                 raise ValueError(f"未知键名: {part} (可用: {list(KEY_MAP.keys())})")
         return codes
 
+    def _order_codes(self, codes: List[int]) -> List[int]:
+        """
+        对HID代码进行排序，确保修饰键先按下
+
+        Args:
+            codes: HID代码列表
+
+        Returns:
+            排序后的代码列表（修饰键在前）
+        """
+        modifiers = [c for c in codes if c in MODIFIER_CODES]
+        main_keys = [c for c in codes if c not in MODIFIER_CODES]
+        return modifiers + main_keys
+
     def press(self, key_name: str) -> None:
         """
         按下指定键或键组合
@@ -341,20 +380,21 @@ class FerrumController:
         self._validate_connection()
 
         codes = self._parse_key(key_name)
+        ordered_codes = self._order_codes(codes)
 
-        if len(codes) == 1:
+        if len(ordered_codes) == 1:
             # 单键使用km.press（自动时序）
-            self._send_command(f"km.press({codes[0]})")
+            self._send_command(f"km.press({ordered_codes[0]})")
         else:
-            # 组合键使用down/up序列
+            # 组合键使用down/up序列，修饰键先按下
             # 按下所有键
-            for code in codes:
+            for code in ordered_codes:
                 self._send_command(f"km.down({code})")
                 time.sleep(0.01)  # 10ms延迟
             # 保持50ms
             time.sleep(0.05)
             # 释放所有键（逆序）
-            for code in reversed(codes):
+            for code in reversed(ordered_codes):
                 self._send_command(f"km.up({code})")
 
         logger.debug(f"[Ferrum] 按键: {key_name}")
