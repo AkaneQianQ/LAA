@@ -12,8 +12,9 @@
 | 3 | Intelligent Wait System | Replace hardcoded sleeps with image-based waits | WAIT-01 to WAIT-04 | 4 |
 | 4 | Error Recovery & ACE | Implement auto-recovery and ACE-compliant patterns | ERR-01 to ERR-04, ACE-01 to ACE-04 | 8 |
 | 5 | Performance & Multi-Account | Optimize speed and enable seamless multi-account | SPEED-01 to SPEED-04, MULTI-01 to MULTI-04 | 8 |
+| 6 | Interactive Test Flow System | F1-driven test interface for manual testing with AI guidance | TEST-01 to TEST-06 | 6 |
 
-**Total:** 5 phases | 29 requirements mapped | 100% coverage ✓
+**Total:** 6 phases | 35 requirements mapped | 100% coverage
 
 ---
 
@@ -21,7 +22,7 @@
 
 **Goal:** Implement automatic character discovery using pure image template matching, eliminating OCR dependency and manual character count input.
 
-**Status:** ✓ Complete (3/3 plans)
+**Status:** Complete (3/3 plans)
 
 **Plans:**
 | Plan | Name | Status | Requirements |
@@ -52,14 +53,14 @@
 
 **Goal:** Build YAML/JSON-based task orchestration system that allows users to define automation workflows without code changes.
 
-**Status:** ✓ Complete (3/3 plans)
+**Status:** Complete (3/3 plans)
 
 **Plans:**
 | Plan | Name | Status | Requirements |
 |------|------|--------|--------------|
-| 01 | YAML Configuration Foundation | ✓ Complete | CFG-01, CFG-03 |
-| 02 | Workflow Executor | ✓ Complete | CFG-02, CFG-04 |
-| 03 | Workflow Bootstrap | ✓ Complete | CFG-01 to CFG-04 |
+| 01 | YAML Configuration Foundation | Complete | CFG-01, CFG-03 |
+| 02 | Workflow Executor | Complete | CFG-02, CFG-04 |
+| 03 | Workflow Bootstrap | Complete | CFG-01 to CFG-04 |
 
 **Requirements:**
 - CFG-01: System loads task definitions from YAML configuration files
@@ -81,7 +82,7 @@
 
 **Goal:** Replace all 39 hardcoded `time.sleep()` calls with intelligent image-based wait conditions that adapt to actual UI state.
 
-**Status:** ✓ Complete (3/3 plans)
+**Status:** Complete (3/3 plans)
 
 Plans:
 - [x] 03-01-PLAN.md — Add intelligent wait schema contracts and validation coverage
@@ -108,15 +109,15 @@ Plans:
 
 **Goal:** Implement robust error recovery for network/UI issues and ensure all interactions comply with Tencent ACE anti-cheat detection.
 
-**Status:** ✓ Complete (4/4 plans)
+**Status:** Complete (4/4 plans)
 
 **Plans:**
 | Plan | Name | Status | Requirements |
 |------|------|--------|--------------|
-| 01 | Recovery Contracts Schema | ✓ Complete | ERR-02, ERR-04 |
-| 02 | Error Taxonomy & RecoveryOrchestrator | ✓ Complete | ERR-01, ERR-02, ERR-03 |
-| 03 | Structured Logging & Evidence | ✓ Complete | ERR-04 |
-| 04 | ACE Compliance Guard | ✓ Complete | ACE-01, ACE-02, ACE-03, ACE-04 |
+| 01 | Recovery Contracts Schema | Complete | ERR-02, ERR-04 |
+| 02 | Error Taxonomy & RecoveryOrchestrator | Complete | ERR-01, ERR-02, ERR-03 |
+| 03 | Structured Logging & Evidence | Complete | ERR-04 |
+| 04 | ACE Compliance Guard | Complete | ACE-01, ACE-02, ACE-03, ACE-04 |
 
 **Requirements:**
 - ERR-01: System detects and recovers from network lag conditions
@@ -143,15 +144,15 @@ Plans:
 
 **Goal:** Optimize execution speed through parallel processing and ROI constraints, and implement seamless multi-account operation.
 
-**Status:** ○ In Progress (1/4 plans)
+**Status:** Complete (4/4 plans)
 
 **Plans:**
-4/4 plans complete
-|------|------|------|--------------|----------------|
-| 01 | Frame Caching System | 1 | SPEED-04 | ✓ Complete |
-| 02 | Parallel ROI Matching | 1 | SPEED-01, SPEED-02 | core/parallel_matcher.py, modules/character_detector.py |
-| 03 | Account Manager and Progress Persistence | 2 | MULTI-01, MULTI-02, MULTI-04 | core/account_manager.py, core/progress_tracker.py |
-| 04 | Account Switching and Sleep Verification | 2 | MULTI-03, SPEED-03 | core/account_switcher.py, modules/workflow_bootstrap.py |
+| Plan | Name | Status | Requirements | Files Modified |
+|------|------|--------|--------------|----------------|
+| 01 | Frame Caching System | Complete | SPEED-04 | core/frame_cache.py |
+| 02 | Parallel ROI Matching | Complete | SPEED-01, SPEED-02 | core/parallel_matcher.py, modules/character_detector.py |
+| 03 | Account Manager and Progress Persistence | Complete | MULTI-01, MULTI-02, MULTI-04 | core/account_manager.py, core/progress_tracker.py |
+| 04 | Account Switching and Sleep Verification | Complete | MULTI-03, SPEED-03 | core/account_switcher.py, modules/workflow_bootstrap.py |
 
 **Requirements:**
 - SPEED-01: System processes images in parallel where possible
@@ -174,6 +175,43 @@ Plans:
 
 ---
 
+## Phase 6: Interactive Test Flow System
+
+**Goal:** Create an F1-driven interactive test interface system where users follow AI instructions to manually operate the game and provide feedback on observations. This is a "human-in-the-loop" testing system for verifying automation flow accuracy and stability.
+
+**Status:** Planned (3 plans)
+
+**Plans:**
+| Plan | Name | Status | Requirements | Files Modified |
+|------|------|--------|--------------|----------------|
+| 01 | Overlay UI System | Planned | TEST-01, TEST-02 | tests/interactive/overlay.py, tests/interactive/test_overlay.py |
+| 02 | Test Flow Engine and JSON Logging | Planned | TEST-03, TEST-04 | tests/interactive/test_logger.py, tests/interactive/test_flow.py |
+| 03 | Test Scenarios and Integration | Planned | TEST-05, TEST-06 | tests/interactive/scenarios.py, tests/interactive/test_runner.py, test_flow_launcher.py |
+
+**Requirements:**
+- TEST-01: System displays semi-transparent overlay (600x80 pixels, 70% opacity, dark theme)
+- TEST-02: Overlay supports drag via title bar and close button
+- TEST-03: System logs test results to JSON with timestamps and user feedback
+- TEST-04: Test flow manages linear step progression with skip support
+- TEST-05: System provides scenario selection dropdown with hardcoded Python scenarios
+- TEST-06: Hotkeys work as specified (F1=next, END=terminate, Y/N=pass/fail)
+
+**Success Criteria:**
+1. Overlay appears at top-left (600x80 pixels), semi-transparent, draggable
+2. User can select test scenario from dropdown
+3. F1 advances steps, Y/N records feedback, END terminates
+4. Test results saved to JSON files in logs/tests/
+5. Two complete scenarios: guild_donation (8 steps) and character_detection (6 steps)
+6. All instructions displayed in Chinese
+
+**Wave Structure:**
+- **Wave 1 (Parallel):** Plan 01 (Overlay UI), Plan 02 (Test Flow Engine)
+- **Wave 2 (Sequential):** Plan 03 (Integration and Scenarios) - depends on Wave 1
+
+**Order:** 6 (testing infrastructure for verification)
+
+---
+
 ## Implementation Notes
 
 ### Dependencies Between Phases
@@ -181,6 +219,17 @@ Plans:
 - Phase 2 → Phase 3: Config system needed to define wait conditions
 - Phase 3 → Phase 4: Intelligent waits required for error recovery
 - Phase 4 → Phase 5: XIGNCODE3 compliance required before multi-account testing
+- Phase 5 → Phase 6: Test flow verifies all previous phases work correctly
+
+### Phase 05.1: 现在基于这个项目编写一个全功能测试脚本，调用superpowers:brainstorm (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 5
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 05.1 to break down)
 
 ### Phase 5 Wave Structure
 
@@ -197,6 +246,7 @@ Plans:
 - **Phase 3**: Replacing all sleeps may expose race conditions
 - **Phase 4**: XIGNCODE3 compliance cannot be fully tested without actual game
 - **Phase 5**: Parallel processing may have GIL contention; requires benchmarking
+- **Phase 6**: Overlay window management may conflict with game fullscreen mode
 
 ### Rollback Strategy
 - Each phase maintains backward compatibility with existing code
@@ -206,4 +256,4 @@ Plans:
 ---
 
 *Roadmap created: 2026-03-07*
-*Updated: 2026-03-07 with Phase 5 plans*
+*Updated: 2026-03-08 with Phase 6 plans*
