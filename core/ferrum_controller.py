@@ -82,6 +82,7 @@ class FerrumController:
             self._connected = True
             logger.debug(f"[Ferrum] 串口已打开: {self.port} @ {self.baudrate}")
         except serial.SerialException as e:
+            logger.error(f"[错误] 无法连接到Ferrum设备 {self.port}: {e}")
             raise FerrumConnectionError(f"无法连接到Ferrum设备 {self.port}: {e}")
 
     def _disconnect(self) -> None:
@@ -100,6 +101,7 @@ class FerrumController:
             FerrumConnectionError: 串口未连接或已关闭
         """
         if not self._connected or not self._serial or not self._serial.is_open:
+            logger.error("[错误] 串口未连接")
             raise FerrumConnectionError("串口未连接")
 
     def _send_command(self, command: str, retry: bool = True) -> str:
@@ -156,6 +158,7 @@ class FerrumController:
                 logger.warning(f"[Ferrum] 命令失败，重试一次: {command}")
                 time.sleep(0.1)
                 return self._send_command(command, retry=False)
+            logger.error(f"[错误] 命令执行失败 '{command}': {e}")
             raise FerrumConnectionError(f"命令执行失败 '{command}': {e}")
 
     def _parse_response(self, lines: list[str], expected_command: str) -> str:
