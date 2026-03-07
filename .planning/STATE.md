@@ -5,12 +5,12 @@ milestone_name: milestone
 current_phase: 6
 current_plan: 02
 status: executing
-last_updated: "2026-03-07T17:39:47.520Z"
+last_updated: "2026-03-07T18:25:35.552Z"
 progress:
-  total_phases: 7
+  total_phases: 8
   completed_phases: 6
-  total_plans: 19
-  completed_plans: 19
+  total_plans: 23
+  completed_plans: 20
 ---
 
 # Project State: LostarkGuildDonationBot
@@ -140,6 +140,11 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 
 ---
 - [Phase 06]: Chinese text for all test scenario instructions and expected results
+- [Phase 07]: Default port COM2 for Ferrum device consistency with existing docs
+- [Phase 07]: Baudrate 115200 standard for Ferrum hardware
+- [Phase 07]: 1 second timeout for responsive error detection
+- [Phase 07]: Retry-once policy for transient serial failures
+- [Phase 07]: Chinese prefix tags per project convention: [Ferrum] for info, [错误] for errors
 
 ## Phase History
 
@@ -178,6 +183,7 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 
 ---
 | Phase 06 P03 | 25 | 4 tasks | 4 files |
+| Phase 07 P01 | 15 min | 6 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -185,6 +191,7 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 
 - Phase 5.1 inserted after Phase 5: 现在基于这个项目编写一个全功能测试脚本，调用superpowers:brainstorm (URGENT)
 - Phase 6 added: 6 增加一个测试流程序，由你来指挥，我来协助操作并且观察操作进行测试。要求，你以半透明横向功能区显示，默认覆盖在左上角，设计关闭按钮和拖动区域，让我按F1下一步，你输出指令以及预期结果，我来进行观察，随时可以终端测试并且告诉你未按照预期进行的情况
+- Phase 7 added: 基于skills：ferrum和现有的代码，开发一个交互逻辑子程序，满足项目内现有代码所有的交互逻辑调用
 
 ---
 
