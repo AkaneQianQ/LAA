@@ -197,7 +197,7 @@ from unittest.mock import patch, MagicMock
 class TestCheckFerrumConnection:
     """Tests for check_ferrum_connection function."""
 
-    @patch('tests.interactive.hardware_check.FerrumController')
+    @patch('core.ferrum_controller.FerrumController')
     def test_successful_connection(self, mock_controller_class):
         """Test successful hardware connection detection."""
         # 设置mock
@@ -213,7 +213,7 @@ class TestCheckFerrumConnection:
         mock_controller_class.assert_called_once_with(port="COM2", baudrate=115200, timeout=1.0)
         mock_controller.close.assert_called_once()
 
-    @patch('tests.interactive.hardware_check.FerrumController')
+    @patch('core.ferrum_controller.FerrumController')
     def test_failed_connection_not_connected(self, mock_controller_class):
         """Test connection detection when device reports not connected."""
         mock_controller = MagicMock()
@@ -225,7 +225,7 @@ class TestCheckFerrumConnection:
         assert result is False
         mock_controller.close.assert_called_once()
 
-    @patch('tests.interactive.hardware_check.FerrumController')
+    @patch('core.ferrum_controller.FerrumController')
     def test_connection_error(self, mock_controller_class):
         """Test connection detection when FerrumConnectionError is raised."""
         from core.ferrum_controller import FerrumConnectionError
@@ -235,7 +235,7 @@ class TestCheckFerrumConnection:
 
         assert result is False
 
-    @patch('tests.interactive.hardware_check.FerrumController')
+    @patch('core.ferrum_controller.FerrumController')
     def test_unexpected_exception(self, mock_controller_class):
         """Test connection detection when unexpected exception occurs."""
         mock_controller_class.side_effect = RuntimeError("Unexpected error")
@@ -248,7 +248,7 @@ class TestCheckFerrumConnection:
 class TestFerrumHardwareCheck:
     """Tests for FerrumHardwareCheck class."""
 
-    @patch('tests.interactive.hardware_check.FerrumController')
+    @patch('core.ferrum_controller.FerrumController')
     def test_check_all_ports(self, mock_controller_class):
         """Test checking multiple ports."""
         mock_controller = MagicMock()
@@ -262,7 +262,7 @@ class TestFerrumHardwareCheck:
         assert results["COM2"]["status"] == "connected"
         assert results["COM3"]["status"] == "connected"
 
-    @patch('tests.interactive.hardware_check.FerrumController')
+    @patch('core.ferrum_controller.FerrumController')
     def test_is_any_connected_true(self, mock_controller_class):
         """Test is_any_connected returns True when at least one port works."""
         mock_controller = MagicMock()
@@ -272,7 +272,7 @@ class TestFerrumHardwareCheck:
         checker = FerrumHardwareCheck(ports=["COM2", "COM3"])
         assert checker.is_any_connected() is True
 
-    @patch('tests.interactive.hardware_check.FerrumController')
+    @patch('core.ferrum_controller.FerrumController')
     def test_is_any_connected_false(self, mock_controller_class):
         """Test is_any_connected returns False when no ports work."""
         from core.ferrum_controller import FerrumConnectionError
@@ -281,7 +281,7 @@ class TestFerrumHardwareCheck:
         checker = FerrumHardwareCheck(ports=["COM2", "COM3"])
         assert checker.is_any_connected() is False
 
-    @patch('tests.interactive.hardware_check.FerrumController')
+    @patch('core.ferrum_controller.FerrumController')
     def test_get_first_connected_port(self, mock_controller_class):
         """Test getting first connected port."""
         mock_controller = MagicMock()
@@ -293,7 +293,7 @@ class TestFerrumHardwareCheck:
 
         assert port == "COM2"
 
-    @patch('tests.interactive.hardware_check.FerrumController')
+    @patch('core.ferrum_controller.FerrumController')
     def test_get_first_connected_port_none(self, mock_controller_class):
         """Test getting first connected port when none available."""
         from core.ferrum_controller import FerrumConnectionError

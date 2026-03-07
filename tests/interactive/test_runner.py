@@ -18,6 +18,7 @@ from tests.interactive.scenarios import (
     list_scenario_names,
     get_scenario_by_name,
 )
+from tests.interactive.hardware_check import check_ferrum_connection
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +40,11 @@ class TestRunner:
         self.selected_scenario = None
         self._number_hotkeys_registered = False
         self._selection_callbacks = {}
+        self.hardware_available = False
+        self.hardware_check_result = None
 
     def initialize(self) -> None:
-        """Initialize all components."""
+        """Initialize all components including hardware check."""
         self.root = tk.Tk()
         self.root.withdraw()  # Hide root window
 
@@ -49,10 +52,72 @@ class TestRunner:
         self.logger = TestLogger()
         self.flow = TestFlow(self.overlay, self.logger)
 
+        # 执行硬件预检测
+        self._perform_hardware_check()
+
         logger.info("TestRunner initialized")
+
+    def _perform_hardware_check(self) -> None:
+        """
+        执行硬件预检测
+
+        检测Ferrum设备是否已连接。如果检测失败，显示错误信息并阻止测试继续。
+        用户可以通过按R键重试检测。
+        """
+        self.hardware_check_result = check_ferrum_connection()
+        self.hardware_available = self.hardware_check_result
+
+        if not self.hardware_available:
+            # 硬件检测失败，显示错误信息
+            error_text = "[错误] Ferrum硬件未连接，请检查: 1.设备电源 2.USB连接 3.COM端口 | 按 R 重试"
+            self.overlay.set_instruction(error_text)
+            self._register_retry_hotkey()
+        else:
+            # 硬件检测成功，继续显示场景选择
+            self.show_scenario_selection()
+
+    def _register_retry_hotkey(self) -> None:
+        """注册R键重试硬件检测的热键"""
+        try:
+            import keyboard
+            keyboard.add_hotkey('r', self._retry_hardware_check)
+            logger.debug("Registered R key for hardware check retry")
+        except Exception as e:
+            logger.warning(f"Failed to register retry hotkey: {e}")
+
+    def _unregister_retry_hotkey(self) -> None:
+        """注销R键重试热键"""
+        try:
+            import keyboard
+            keyboard.remove_hotkey('r')
+            logger.debug("Unregistered R key for hardware check retry")
+        except Exception:
+            pass
+
+    def _retry_hardware_check(self) -> None:
+        """
+        重试硬件检测
+
+        用户按R键时调用，重新检测设备连接状态。
+        成功后自动继续到场景选择。
+        """
+        if self.root:
+            self.root.after(0, self._do_retry_hardware_check)
+
+    def _do_retry_hardware_check(self) -> None:
+        """实际执行重试（在主线程中调用）"""
+        print("[Ferrum] 正在重试硬件检测...")
+        self._unregister_retry_hotkey()
+        self._perform_hardware_check()
 
     def show_scenario_selection(self) -> None:
         """Show scenario selection UI in overlay."""
+        # 如果硬件不可用，显示错误而不是场景列表
+        if not self.hardware_available:
+            error_text = "[错误] Ferrum硬件未连接，请检查: 1.设备电源 2.USB连接 3.COM端口 | 按 R 重试"
+            self.overlay.set_instruction(error_text)
+            return
+
         scenario_names = list_scenario_names()
 
         if not scenario_names:
@@ -179,7 +244,8 @@ class TestRunner:
     def run(self) -> None:
         """Main run loop."""
         self.initialize()
-        self.show_scenario_selection()
+        # 硬件检测在initialize中已执行，成功后自动显示场景选择
+        # 如果硬件检测失败，initialize会显示错误信息并等待重试
 
         # Keep main thread alive
         try:
@@ -195,6 +261,7 @@ class TestRunner:
 
         # Unregister hotkeys
         self._unregister_selection_hotkeys()
+        self._unregister_retry_hotkey()
 
         try:
             import keyboard
