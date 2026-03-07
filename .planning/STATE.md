@@ -86,8 +86,9 @@ Phase 4: Error Recovery & ACE          ○ In Progress (3/6 plans)
   Plan 01: Recovery Contracts Schema   ✓ Complete
   Plan 02: Runtime Recovery & Logging  ✓ Complete
   Plan 03: ACE Compliance Guard        ✓ Complete
-Phase 5: Performance & Multi-Account   ○ In Progress (1/4 plans)
+Phase 5: Performance & Multi-Account   ○ In Progress (2/4 plans)
   Plan 01: Frame Cache with TTL         ✓ Complete
+  Plan 02: Parallel ROI Matching        ✓ Complete
 ```
 
 **Overall:** 0/5 phases complete (0%)
@@ -107,8 +108,8 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 
 ## Active Context
 
-**Last Action:** Completed Plan 05-01: Frame Cache with TTL
-**Next Action:** Continue with Plan 05-02
+**Last Action:** Completed Plan 05-02: Parallel ROI Matching
+**Next Action:** Continue with Plan 05-03
 
 **Blockers:** None
 
@@ -215,6 +216,9 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 | 2026-03-07 | Fail-fast compliance validation at startup | ACE-03/04 guard integration |
 | 2026-03-07 | Default TTL of 150ms balances freshness vs performance | Frame cache design |
 | 2026-03-07 | Dependency injection pattern for VisionEngine integration | Clean architecture |
+| 2026-03-07 | OpenCV releases GIL during matchTemplate enabling thread speedup | SPEED-01 implementation |
+| 2026-03-07 | max_workers=4 optimal for 9-slot scanning | ThreadPoolExecutor tuning |
+| 2026-03-07 | ROI enforcement is breaking change requiring explicit ROI | SPEED-02 compliance |
 
 ---
 
@@ -250,7 +254,17 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 
 *State updated: 2026-03-07 after completing 04-03*
 | 05 | 01 | 15 min | 3 | 4 |
+| 05 | 02 | 25 min | 3 | 4 |
 
 ---
 
-*State updated: 2026-03-07 after completing 05-01*
+*State updated: 2026-03-07 after completing 05-02*
+
+## Plan 05-02 Notes
+
+- ParallelMatcher with ThreadPoolExecutor implemented
+- 33 new tests added (17 parallel matching + 16 ROI constraints)
+- Full test suite: 272/272 passing
+- ROI constraints enforced (SPEED-02) - breaking change requiring explicit ROI
+- CharacterDetector.scan_visible_slots_parallel() achieves <150ms for 9 slots
+- ~2.5-3x speedup over sequential scanning

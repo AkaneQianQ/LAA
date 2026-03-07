@@ -55,8 +55,8 @@ Requirements ensuring compatibility with Tencent ACE anti-cheat.
 
 Requirements for improving execution speed.
 
-- [ ] **SPEED-01**: System processes images in parallel where possible
-- [ ] **SPEED-02**: System constrains template matching to specified ROIs
+- [x] **SPEED-01**: System processes images in parallel where possible
+- [x] **SPEED-02**: System constrains template matching to specified ROIs
 - [ ] **SPEED-03**: System eliminates all hardcoded time.sleep() calls
 - [x] **SPEED-04**: System implements frame caching to reduce capture overhead
 
@@ -121,8 +121,8 @@ Deferred features for future consideration.
 | ACE-02 | Phase 5 | Complete |
 | ACE-03 | Phase 5 | Pending |
 | ACE-04 | Phase 5 | Pending |
-| SPEED-01 | Phase 6 | Pending |
-| SPEED-02 | Phase 6 | Pending |
+| SPEED-01 | Phase 6 | Complete |
+| SPEED-02 | Phase 6 | Complete |
 | SPEED-03 | Phase 6 | Pending |
 | SPEED-04 | Phase 6 | Complete |
 | MULTI-01 | Phase 7 | Pending |
