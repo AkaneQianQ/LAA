@@ -59,14 +59,13 @@ class TestRunner:
             self.overlay.set_instruction("错误: 没有可用的测试场景")
             return
 
-        # Build selection text
-        selection_text = "选择测试场景:\n"
+        # Build selection text (compact for horizontal layout)
+        selection_text = "选择场景: "
         for i, name in enumerate(scenario_names):
             scenario = get_scenario_by_name(name)
             desc = scenario.description if scenario else name
-            selection_text += f"{i+1}. {desc}\n"
-
-        selection_text += f"\n按数字键 1-{len(scenario_names)} 选择"
+            selection_text += f"{i+1}.{desc} "
+        selection_text += f"| 按 1-{len(scenario_names)} 选择"
 
         self.overlay.set_instruction(selection_text)
 
@@ -134,11 +133,7 @@ class TestRunner:
             self._unregister_selection_hotkeys()
 
             # Show selection confirmation
-            confirm_text = (
-                f"已选择: {self.selected_scenario.description}\n"
-                f"步骤数: {len(self.selected_scenario.steps)}\n\n"
-                f"按 F1 开始测试"
-            )
+            confirm_text = f"已选择: {self.selected_scenario.description} ({len(self.selected_scenario.steps)}步) | 按 F1 开始"
             self.overlay.set_instruction(confirm_text)
 
             # Register F1 to start

@@ -95,12 +95,10 @@ class TestFlow:
 
         # Show ready prompt
         ready_text = (
-            f"准备就绪？\n"
-            f"场景: {self.scenario.description}\n"
-            f"步骤数: {len(self.scenario.steps)}\n\n"
-            f"按 F1 开始测试"
+            f"准备就绪？ 场景: {self.scenario.description}  "
+            f"共 {len(self.scenario.steps)} 步 | 按 F1 开始"
         )
-        self.overlay.set_instruction(ready_text)
+        self.overlay.set_instruction(ready_text, 0, len(self.scenario.steps))
         logger_module.info(f"Test started: {self.test_id}")
 
     def next_step(self) -> None:
@@ -144,17 +142,13 @@ class TestFlow:
         self._current_feedback = None
 
         step = self.scenario.steps[index]
-        step_text = (
-            f"步骤 {index + 1}/{len(self.scenario.steps)}\n"
-            f"指令: {step.instruction}\n"
-            f"预期: {step.expected_result}"
-        )
+        step_text = f"{step.instruction} | 预期: {step.expected_result}"
         if step.can_skip:
-            step_text += "\n\n按 Y 通过, N 失败, F1 跳过"
+            step_text += " | Y:通过 N:失败 F1:跳过"
         else:
-            step_text += "\n\n按 Y 通过, N 失败"
+            step_text += " | Y:通过 N:失败"
 
-        self.overlay.set_instruction(step_text)
+        self.overlay.set_instruction(step_text, index + 1, len(self.scenario.steps))
         logger_module.debug(f"Started step {index + 1}: {step.step_id}")
 
     def record_feedback(self, feedback: str) -> None:
@@ -173,13 +167,9 @@ class TestFlow:
 
         # Show confirmation and prompt for next step
         step = self.scenario.steps[self.current_step_index]
-        confirm_text = (
-            f"步骤 {self.current_step_index + 1}/{len(self.scenario.steps)}\n"
-            f"指令: {step.instruction}\n"
-            f"反馈: {'通过' if feedback == 'Y' else '失败' if feedback == 'N' else '跳过'}\n\n"
-            f"按 F1 继续下一步"
-        )
-        self.overlay.set_instruction(confirm_text)
+        feedback_text = '通过' if feedback == 'Y' else '失败' if feedback == 'N' else '跳过'
+        confirm_text = f"✓ {feedback_text} | 按 F1 继续"
+        self.overlay.set_instruction(confirm_text, self.current_step_index + 1, len(self.scenario.steps))
         logger_module.debug(f"Recorded feedback for step {self.current_step_index + 1}: {feedback}")
 
     def skip_step(self) -> None:
@@ -200,7 +190,7 @@ class TestFlow:
             self.logger.end_test(self.test_id, "INCOMPLETE")
 
         self.state = TestState.TERMINATED
-        self.overlay.set_instruction("测试已终止\n按 END 关闭")
+        self.overlay.set_instruction("测试已终止 | 按 END 关闭")
         logger_module.info(f"Test terminated: {self.test_id}")
 
     def _record_current_step(self) -> None:
@@ -232,23 +222,18 @@ class TestFlow:
             self.logger.end_test(self.test_id, overall)
 
         self.state = TestState.COMPLETED
-        self.overlay.set_instruction(f"测试完成！\n结果: {overall}\n按 END 关闭")
+        self.overlay.set_instruction(f"测试完成！结果: {overall} | 按 END 关闭")
         logger_module.info(f"Test completed: {self.test_id} with result {overall}")
 
     def _show_feedback_reminder(self) -> None:
         """Show reminder to provide feedback."""
         step = self.scenario.steps[self.current_step_index]
-        reminder_text = (
-            f"步骤 {self.current_step_index + 1}/{len(self.scenario.steps)}\n"
-            f"指令: {step.instruction}\n"
-            f"预期: {step.expected_result}\n\n"
-            f"请先按 Y 或 N 提供反馈，然后按 F1 继续"
-        )
-        self.overlay.set_instruction(reminder_text)
+        reminder_text = f"⚠ 请先按 Y 或 N 提供反馈，然后按 F1 继续"
+        self.overlay.set_instruction(reminder_text, self.current_step_index + 1, len(self.scenario.steps))
 
     def _show_error(self, message: str) -> None:
         """Display error message in overlay."""
-        self.overlay.set_instruction(f"错误: {message}\n按 END 关闭")
+        self.overlay.set_instruction(f"错误: {message} | 按 END 关闭")
         logger_module.error(message)
 
     def get_current_state(self) -> Dict[str, Any]:
@@ -296,7 +281,7 @@ class TestTestFlow:
                 self.instructions = []
                 self._hotkeys = {}
 
-            def set_instruction(self, text):
+            def set_instruction(self, text, step=0, total=0):
                 self.instructions.append(text)
 
             def is_visible(self):
@@ -350,7 +335,8 @@ class TestTestFlow:
         flow.load_scenario(sample_scenario)
         flow.start()
         flow.next_step()  # From ready prompt to step 1
-        assert "步骤 1/2" in mock_overlay.instructions[-1]
+        # Step info now shown in status label, instruction contains step content
+        assert "Instruction 1" in mock_overlay.instructions[-1]
 
     def test_record_feedback_logs_step(self, flow, sample_scenario, temp_logger):
         """Test that feedback is logged."""
