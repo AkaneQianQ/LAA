@@ -16,52 +16,57 @@ This phase delivers the foundation for all multi-account automation — zero-con
 ## Implementation Decisions
 
 ### Character Slot Detection Method
-- **Dual detection approach**: Detect both character presence AND empty slot markers
-- **Primary**: Character avatar presence detection in slot center region
-- **Secondary**: Empty slot background/UI detection for validation
-- **Result**: Slot marked as occupied only if character avatar detected AND empty marker NOT detected
+- **Template-based detection**: Use `CharacterISorNo` image from assets folder
+- **Masking**: FF00FF (magenta) color in template marks ignored regions
+- **Detection logic**: Compare slot border features using template matching
+- **ROI for each slot**:
+  - 1-1: (904, 557, 1152, 624), size 248x67
+  - 1-2: (1164, 557, 1412, 624), size 248x67
+  - 1-3: (1425, 557, 1673, 624), size 248x67
+  - 2-1: (904, 674, 1152, 741), size 248x67
+  - 2-2: (1164, 674, 1412, 741), size 248x67
+  - 2-3: (1425, 674, 1673, 741), size 248x67
+  - 3-1: (904, 791, 1152, 858), size 248x67
+  - 3-2: (1164, 791, 1412, 858), size 248x67
+  - 3-3: (1425, 791, 1673, 858), size 248x67
+- **Grid pattern**: 3x3 layout with ~260px column spacing, ~117px row spacing
 
 ### First-Run Discovery Flow
-- **Complete discovery mode on first encounter**: Full character enumeration and caching
+- **Quick index mode**: Screenshot only the first character as account identifier
 - **Process**:
-  1. Detect all 9 visible slots for character presence
-  2. Screenshot each discovered character (for account indexing)
-  3. Scroll down to next page
-  4. Repeat until no new characters detected
-  5. Save all character data to database
-- **Rationale**: First run establishes complete account profile; subsequent runs use cached data for instant recognition
+  1. Open ESC menu and detect character selection screen
+  2. Detect which of 9 visible slots have characters
+  3. Screenshot the first discovered character for account indexing
+  4. Save account identifier to database
+  5. Continue with automation workflow
+- **Rationale**: Fast first-run experience; character details discovered on-demand during workflow
 
 ### Character Screenshot Indexing
 - **Storage**: SQLite database for metadata + file system for screenshots
 - **Structure**: `data/accounts/{account_hash}/characters/{slot_index}.png`
-- **Screenshot content**: Character avatar only (not full slot) for precise matching
+- **Screenshot content**: Character selection page screenshot for scroll detection + individual character screenshots for database
 - **Account identifier**: Hash of first character's screenshot + creation timestamp
-- **Database schema**: Characters table with account_id, slot_index, screenshot_path, discovered_at
+- **Progress tracking**: Screenshots also serve as "completed today" markers to avoid repetition
+- **Claude's discretion**: Exact SQLite schema design (tables, indexes, relationships)
 
 ### Scroll Termination Detection
-- **Approach**: Screenshot comparison between consecutive pages
-- **Logic**: If current page screenshot matches previous page screenshot → reached end
-- **Optimization**: Compare only the 3 bottom slots (positions 7-9) since top slots may show overlap
-- **Fallback**: Maximum 10 scroll attempts as safety limit (supports up to 30 characters)
-
-### ROI Coordinates
-- **Source**: User will provide precise ROI coordinates for 9 slots at 2560x1440 resolution
-- **Format**: List of (x1, y1, x2, y2) tuples for each slot position
-- **Avatar ROI**: Sub-region within each slot for character screenshot capture
-- **Graceful degradation**: If user doesn't provide coordinates, implement will fail with clear error message
+- **Method**: Template matching for scrollbar bottom indicator
+- **Template image**: `Buttom.bmp` in assets folder
+- **Detection ROI**: (1683, 828, 1697, 860), size 14x32
+- **Logic**: If `Buttom.bmp` is detected in ROI, scrollbar has reached bottom
+- **Alternative**: Screenshot comparison between consecutive pages (fallback method)
 
 ### Detection Confidence Thresholds
-- **Character presence**: cv2.TM_CCOEFF_NORMED threshold >= 0.8
-- **Empty slot detection**: Same threshold, separate template
-- **Screenshot matching**: threshold >= 0.9 for account identification
+- **Template matching**: cv2.TM_CCOEFF_NORMED threshold >= 0.8
+- **Exact match for scrollbar**: 100% pixel match for `Buttom.bmp`
 - **Retries**: 3 attempts with small position jitter if initial detection fails
 
 ### Claude's Discretion
-- Exact SQLite schema design (tables, indexes, relationships)
 - Screenshot preprocessing (resize, grayscale, compression)
 - Hash algorithm choice for account identification
 - Retry logic timing and backoff strategy
 - Cache invalidation policy (when to re-discover characters)
+- SQLite schema design (tables, indexes, relationships)
 
 </decisions>
 
@@ -72,13 +77,18 @@ This phase delivers the foundation for all multi-account automation — zero-con
 - 3x3 grid layout (9 visible slots at a time)
 - Scroll moves down by 3 slots (one full row)
 - Character slots show: avatar (circular), character name, class icon, item level
-- Empty slots show: "+" icon or darker background
+- Empty slots show: different border color/texture
+
+**Detection Assets:**
+- `CharacterISorNo`: Template for detecting if a slot has character (FF00FF masks ignored regions)
+- `Buttom.bmp`: Scrollbar bottom indicator for end-of-list detection
 
 **Desired Behavior:**
 - ESC opens character selection menu
 - Bot should identify account within 5 seconds of first encounter
-- Subsequent runs should identify account instantly from cached data
-- Character discovery should complete within 30 seconds for accounts with 20+ characters
+- Screenshot full character selection page before selecting character
+- Individual character screenshots saved for database and progress tracking
+- Subsequent runs recognize account instantly from cached data
 
 </specifics>
 
@@ -117,6 +127,7 @@ This phase delivers the foundation for all multi-account automation — zero-con
 - **Item level reading**: Extract item level from slot display — requires OCR or advanced CV, deferred per user requirement
 - **Parallel character discovery**: Process multiple slots simultaneously — optimization for v2
 - **Machine learning character recognition**: Train model to identify characters more robustly — overkill for current needs
+- **YAML task orchestration**: Configuration-driven automation workflows — Phase 2 scope
 
 </deferred>
 
