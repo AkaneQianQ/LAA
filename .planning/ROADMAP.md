@@ -29,7 +29,7 @@
 |------|------|--------|--------------|
 | 01 | Contracts and Persistence Foundation | Complete    | 2026-03-07 |
 | 02 | Vision Engine Integration | Complete    | 2026-03-07 |
-| 03 | Account Indexing and Screenshot Cache | ✓ Complete | CHAR-04, CHAR-05 |
+| 03 | Account Indexing and Screenshot Cache | Complete    | 2026-03-07 |
 
 **Requirements:**
 - CHAR-01: System detects ESC menu opening via template matching
