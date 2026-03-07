@@ -82,12 +82,12 @@
 
 **Goal:** Replace all 39 hardcoded `time.sleep()` calls with intelligent image-based wait conditions that adapt to actual UI state.
 
-**Plans:** 3 plans
+**Status:** ✓ Complete (3/3 plans)
 
 Plans:
 - [x] 03-01-PLAN.md — Add intelligent wait schema contracts and validation coverage
 - [x] 03-02-PLAN.md — Implement wait_image runtime semantics and executor retry interval handling
-- [ ] 03-03-PLAN.md — Migrate guild workflow waits and update integration tests for end-to-end intelligent wait behavior
+- [x] 03-03-PLAN.md — Migrate guild workflow waits and update integration tests for end-to-end intelligent wait behavior
 
 **Requirements:**
 - WAIT-01: System waits for images to appear before proceeding

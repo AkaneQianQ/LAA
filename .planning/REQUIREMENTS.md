@@ -31,7 +31,7 @@ Requirements replacing hardcoded sleeps with intelligent image-based waits.
 - [x] **WAIT-01**: System waits for images to appear before proceeding
 - [x] **WAIT-02**: System waits for images to disappear before proceeding
 - [x] **WAIT-03**: System supports configurable timeouts for all wait operations
-- [ ] **WAIT-04**: System implements automatic retry logic on timeout
+- [x] **WAIT-04**: System implements automatic retry logic on timeout
 
 ### Error Recovery (ERR)
 
@@ -112,7 +112,7 @@ Deferred features for future consideration.
 | WAIT-01 | Phase 3 | Complete |
 | WAIT-02 | Phase 3 | Complete |
 | WAIT-03 | Phase 3 | Complete |
-| WAIT-04 | Phase 3 | Pending |
+| WAIT-04 | Phase 3 | Complete |
 | ERR-01 | Phase 4 | Pending |
 | ERR-02 | Phase 4 | Pending |
 | ERR-03 | Phase 4 | Pending |

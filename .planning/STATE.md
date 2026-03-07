@@ -48,9 +48,10 @@ Phase 2: Configuration System          ✓ Complete (3/3 plans)
   Plan 01: YAML Configuration Foundation ✓ Complete
   Plan 02: Workflow Executor             ✓ Complete
   Plan 03: Workflow Bootstrap            ✓ Complete
-Phase 3: Intelligent Wait System       ○ In Progress (2/3 plans)
+Phase 3: Intelligent Wait System       ✓ Complete (3/3 plans)
   Plan 01: Schema Contracts            ✓ Complete
   Plan 02: Wait Image Runtime          ✓ Complete
+  Plan 03: Guild Workflow Migration    ✓ Complete
 Phase 4: Error Recovery & ACE          ○ Not started
 Phase 5: Performance & Multi-Account   ○ Not started
 ```
@@ -72,8 +73,8 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 
 ## Active Context
 
-**Last Action:** Completed Plan 03-02: Wait Image Runtime Semantics
-**Next Action:** Continue with Plan 03-03: Guild Workflow Migration
+**Last Action:** Completed Plan 03-03: Guild Workflow Migration
+**Next Action:** Phase 3 complete - proceed to Phase 4: Error Recovery & ACE
 
 **Blockers:** None
 
@@ -106,6 +107,11 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 - wait_image runtime with 2-hit stability gating
 - Executor retry interval with step-level override
 - Timeout errors flow through executor retry lifecycle
+- Plan 03-03 completed with 21 new tests (146 total)
+- Guild donation workflow migrated to wait_image actions
+- 7 wait_image steps with 4 appear and 3 disappear states
+- Sleep inventory verification for SPEED-03 compliance
+- Bootstrap fixed to pass vision_engine to ActionDispatcher
 
 ---
 
@@ -167,7 +173,8 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 | 02 | 03 | 3 min | 2 | 4 |
 | 03 | 01 | 8 min | 2 | 2 |
 | 03 | 02 | 20 min | 2 | 5 |
+| 03 | 03 | 25 min | 3 | 4 |
 
 ---
 
-*State updated: 2026-03-07 after completing 03-02 (Phase 3 in progress)*
+*State updated: 2026-03-07 after completing 03-03 (Phase 3 complete)*
