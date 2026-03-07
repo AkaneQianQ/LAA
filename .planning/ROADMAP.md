@@ -253,7 +253,43 @@ Plans:
 - Old `main.py` preserved until Phase 5 complete
 - Feature flags allow gradual migration
 
+### Phase 7: 基于skills：ferrum和现有的代码，开发一个交互逻辑子程序，满足项目内现有代码所有的交互逻辑调用
+
+**Goal:** Integrate Ferrum hardware API for all keyboard/mouse interactions via FerrumController that implements the hardware controller interface expected by HardwareInputGateway.
+
+**Requirements:**
+- REQ-HW-01: Ferrum serial communication via pyserial
+- REQ-HW-02: Command/response protocol handling with echo parsing
+- REQ-HW-03: Hardware initialization (km.init())
+- REQ-MOUSE-01: Mouse movement via km.move(x, y)
+- REQ-MOUSE-02: Left button click via km.click(0)
+- REQ-MOUSE-03: Scroll wheel via km.wheel(amount)
+- REQ-KBD-01: Key name to HID code mapping
+- REQ-KBD-02: Key press via km.down() + km.up()
+- REQ-KBD-03: Key combination support (e.g., "alt+u")
+- REQ-INT-01: FerrumController compatible with HardwareInputGateway
+- REQ-INT-02: Works with ActionDispatcher
+- REQ-INT-03: End-to-end testing capability
+
+**Depends on:** Phase 6
+**Plans:** 4 plans (2 waves)
+
+| Plan | Name | Wave | Depends On |
+|------|------|------|------------|
+| 07.01 | FerrumController Core and Serial Communication | 1 | - |
+| 07.02 | Mouse Actions - Move, Click, and Scroll | 1 | 07.01 |
+| 07.03 | Keyboard Actions - HID Mapping and Key Press | 1 | 07.01 |
+| 07.04 | Integration with HardwareInputGateway and Testing | 2 | 07.01, 07.02, 07.03 |
+
+**Success Criteria:**
+1. FerrumController connects to Ferrum device via serial port
+2. All commands use correct Ferrum KM API syntax (km.move, km.click, km.press, etc.)
+3. Key combinations like "alt+u" work correctly for guild menu
+4. HardwareInputGateway wraps FerrumController and adds jitter/compliance
+5. ActionDispatcher successfully dispatches actions through the full chain
+6. Integration tests verify end-to-end functionality
+
 ---
 
 *Roadmap created: 2026-03-07*
-*Updated: 2026-03-08 with Phase 6 plans*
+*Updated: 2026-03-08 with Phase 7 plans*
