@@ -18,6 +18,8 @@ import hashlib
 import os
 from datetime import datetime
 
+from core.parallel_matcher import ParallelMatcher
+
 
 # =============================================================================
 # LOCKED ROI CONSTANTS (2560x1440 resolution)
@@ -129,7 +131,9 @@ class CharacterDetector:
     slot occupancy scanning, scroll bottom detection, and full discovery.
     """
 
-    def __init__(self, assets_path: str = "assets", data_dir: str = "data", db_path: str = "data/accounts.db"):
+    def __init__(self, assets_path: str = "assets", data_dir: str = "data",
+                 db_path: str = "data/accounts.db", use_parallel: bool = False,
+                 parallel_workers: int = 4):
         """
         Initialize the detector with path to template assets.
 
@@ -137,11 +141,16 @@ class CharacterDetector:
             assets_path: Path to directory containing template images
             data_dir: Path to data directory for account storage
             db_path: Path to SQLite database file
+            use_parallel: Whether to enable parallel scanning by default
+            parallel_workers: Number of worker threads for parallel matching
         """
         self.assets_path: str = assets_path
         self.data_dir: str = data_dir
         self.db_path: str = db_path
         self._template_cache: Dict[str, np.ndarray] = {}
+        self._parallel_matcher: Optional[ParallelMatcher] = None
+        if use_parallel:
+            self._parallel_matcher = ParallelMatcher(max_workers=parallel_workers)
 
     def _load_template(self, template_name: str) -> Optional[np.ndarray]:
         """
@@ -319,6 +328,86 @@ class CharacterDetector:
             ))
 
         return results
+
+    def scan_visible_slots_parallel(self, screenshot: np.ndarray,
+                                    max_workers: int = 4) -> List[SlotOccupancyResult]:
+        """
+        Scan all 9 visible slots in parallel using ThreadPoolExecutor.
+
+        This method provides the same functionality as scan_visible_slots but
+        uses parallel processing for improved performance. OpenCV releases the
+        GIL during matchTemplate, so threads provide actual speedup.
+
+        Args:
+            screenshot: Full screen capture as BGR numpy array
+            max_workers: Number of worker threads (default: 4)
+
+        Returns:
+            List of SlotOccupancyResult for each slot (index 0-8)
+        """
+        results: List[SlotOccupancyResult] = []
+        template = self._load_template(CHARACTER_DETECTION_TEMPLATE)
+
+        if template is None:
+            # Template not found - return all slots as empty
+            for i, roi in enumerate(ALL_SLOT_ROIS):
+                results.append(SlotOccupancyResult(i, roi, False, 0.0))
+            return results
+
+        # Use parallel matcher
+        matcher = self._parallel_matcher if self._parallel_matcher else ParallelMatcher(max_workers=max_workers)
+        parallel_results = matcher.scan_rois(screenshot, template, ALL_SLOT_ROIS, SLOT_DETECTION_THRESHOLD)
+
+        # Convert parallel results to SlotOccupancyResult objects
+        for slot_index in range(len(ALL_SLOT_ROIS)):
+            roi = ALL_SLOT_ROIS[slot_index]
+            found, confidence = parallel_results.get(slot_index, (False, 0.0))
+
+            # Apply retry logic for borderline cases (same as sequential)
+            if SLOT_DETECTION_THRESHOLD - 0.15 <= confidence < SLOT_DETECTION_THRESHOLD:
+                # Borderline case - retry for better accuracy
+                best_confidence = confidence
+                for _ in range(MAX_DETECTION_RETRIES - 1):
+                    _, retry_confidence, _ = self._match_single_slot(screenshot, template, roi)
+                    best_confidence = max(best_confidence, retry_confidence)
+                    if best_confidence >= SLOT_DETECTION_THRESHOLD:
+                        break
+                    if best_confidence < SLOT_DETECTION_THRESHOLD - 0.15:
+                        break
+                confidence = best_confidence
+                found = confidence >= SLOT_DETECTION_THRESHOLD
+
+            results.append(SlotOccupancyResult(slot_index, roi, found, confidence))
+
+        return results
+
+    def _match_single_slot(self, screenshot: np.ndarray, template: np.ndarray,
+                           roi: Tuple[int, int, int, int]) -> Tuple[bool, float, Tuple[int, int]]:
+        """
+        Match template in a single slot ROI.
+
+        Args:
+            screenshot: Full screen capture
+            template: Template image
+            roi: Slot ROI coordinates
+
+        Returns:
+            Tuple of (found, confidence, location)
+        """
+        x1, y1, x2, y2 = roi
+        slot_region = screenshot[y1:y2, x1:x2]
+
+        if slot_region.size == 0:
+            return False, 0.0, (0, 0)
+
+        slot_gray = cv2.cvtColor(slot_region, cv2.COLOR_BGR2GRAY)
+
+        try:
+            result = cv2.matchTemplate(slot_gray, template, TEMPLATE_MATCH_METHOD)
+            _, max_val, _, max_loc = cv2.minMaxLoc(result)
+            return max_val >= SLOT_DETECTION_THRESHOLD, max_val, (x1 + max_loc[0], y1 + max_loc[1])
+        except cv2.error:
+            return False, 0.0, (0, 0)
 
     def scan_slots_occupancy(self, screenshot: np.ndarray) -> List[SlotOccupancyResult]:
         """
