@@ -86,9 +86,10 @@ Phase 4: Error Recovery & ACE          ○ In Progress (3/6 plans)
   Plan 01: Recovery Contracts Schema   ✓ Complete
   Plan 02: Runtime Recovery & Logging  ✓ Complete
   Plan 03: ACE Compliance Guard        ✓ Complete
-Phase 5: Performance & Multi-Account   ○ In Progress (2/4 plans)
+Phase 5: Performance & Multi-Account   ○ In Progress (3/4 plans)
   Plan 01: Frame Cache with TTL         ✓ Complete
   Plan 02: Parallel ROI Matching        ✓ Complete
+  Plan 03: Account Management           ✓ Complete
 ```
 
 **Overall:** 0/5 phases complete (0%)
@@ -108,8 +109,8 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 
 ## Active Context
 
-**Last Action:** Completed Plan 05-02: Parallel ROI Matching
-**Next Action:** Continue with Plan 05-03
+**Last Action:** Completed Plan 05-03: Account Management and Progress Persistence
+**Next Action:** Continue with Plan 05-04 (if exists)
 
 **Blockers:** None
 
@@ -255,16 +256,18 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 *State updated: 2026-03-07 after completing 04-03*
 | 05 | 01 | 15 min | 3 | 4 |
 | 05 | 02 | 25 min | 3 | 4 |
+| 05 | 03 | 25 min | 4 | 5 |
 
 ---
 
-*State updated: 2026-03-07 after completing 05-02*
+*State updated: 2026-03-07 after completing 05-03*
 
-## Plan 05-02 Notes
+## Plan 05-03 Notes
 
-- ParallelMatcher with ThreadPoolExecutor implemented
-- 33 new tests added (17 parallel matching + 16 ROI constraints)
-- Full test suite: 272/272 passing
-- ROI constraints enforced (SPEED-02) - breaking change requiring explicit ROI
-- CharacterDetector.scan_visible_slots_parallel() achieves <150ms for 9 slots
-- ~2.5-3x speedup over sequential scanning
+- Progress tracking schema with character_progress table
+- ProgressTracker class with mark_done, is_done, get_summary methods
+- AccountManager with per-account database isolation
+- AccountContext frozen dataclass for thread safety
+- 34 new tests (14 progress + 12 account manager + 8 isolation)
+- Per-account databases at data/accounts/{hash}/progress.db
+- Database isolation verified - no cross-contamination between accounts

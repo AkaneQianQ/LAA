@@ -64,10 +64,10 @@ Requirements for improving execution speed.
 
 Requirements for seamless multi-account operation.
 
-- [ ] **MULTI-01**: System automatically identifies accounts without manual character count entry
-- [ ] **MULTI-02**: System persists progress per account across sessions
+- [x] **MULTI-01**: System automatically identifies accounts without manual character count entry
+- [x] **MULTI-02**: System persists progress per account across sessions
 - [ ] **MULTI-03**: System supports switching between accounts without restart
-- [ ] **MULTI-04**: System maintains separate state databases per account
+- [x] **MULTI-04**: System maintains separate state databases per account
 
 ## v2 Requirements
 
@@ -125,10 +125,10 @@ Deferred features for future consideration.
 | SPEED-02 | Phase 6 | Complete |
 | SPEED-03 | Phase 6 | Pending |
 | SPEED-04 | Phase 6 | Complete |
-| MULTI-01 | Phase 7 | Pending |
-| MULTI-02 | Phase 7 | Pending |
+| MULTI-01 | Phase 7 | Complete |
+| MULTI-02 | Phase 7 | Complete |
 | MULTI-03 | Phase 7 | Pending |
-| MULTI-04 | Phase 7 | Pending |
+| MULTI-04 | Phase 7 | Complete |
 
 **Coverage:**
 - v1 requirements: 24 total
