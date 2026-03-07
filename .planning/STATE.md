@@ -39,9 +39,12 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 **Notes:**
 - Codebase mapping completed with 7 documents
 - 24 requirements defined across 5 phases
-- Phase 1 context gathered with 4 gray areas discussed
-- Key decisions: Dual slot detection, SQLite storage, screenshot comparison for scroll end
-- OCR will be completely removed in favor of image template matching
+- Phase 1 context gathered with user-provided specifications:
+  - 9 slot ROIs defined with exact coordinates (248x67 each, 3x3 grid)
+  - Character detection via `CharacterISorNo` template (FF00FF masked regions)
+  - Scroll bottom detection via `Buttom.bmp` template (1683, 828, 1697, 860)
+  - Quick index mode: screenshot first character only for account ID
+  - Full page screenshot + individual character screenshots for database
 
 ---
 
