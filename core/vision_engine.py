@@ -53,41 +53,58 @@ def match_template_roi(
         return 0.0, (0, 0)
 
 
+def _validate_roi(roi: Tuple[int, int, int, int]) -> None:
+    """
+    Validate ROI tuple.
+
+    Args:
+        roi: Region of interest (x1, y1, x2, y2)
+
+    Raises:
+        ValueError: If ROI is invalid
+    """
+    if roi is None:
+        raise ValueError("ROI is required for template matching (SPEED-02 compliance)")
+
+    if len(roi) != 4:
+        raise ValueError(f"ROI must be a 4-tuple (x1, y1, x2, y2), got {len(roi)} elements")
+
+    x1, y1, x2, y2 = roi
+
+    if x1 >= x2:
+        raise ValueError(f"Invalid ROI: x1 ({x1}) must be less than x2 ({x2})")
+
+    if y1 >= y2:
+        raise ValueError(f"Invalid ROI: y1 ({y1}) must be less than y2 ({y2})")
+
+
 def find_element(
     screenshot: np.ndarray,
     template: np.ndarray,
-    roi: Optional[Tuple[int, int, int, int]] = None,
+    roi: Tuple[int, int, int, int],
     threshold: float = 0.8,
     method: int = cv2.TM_CCOEFF_NORMED
 ) -> Tuple[bool, float, Tuple[int, int]]:
     """
     Find an element in the screenshot using template matching.
 
+    SPEED-02: ROI constraint enforcement - full-screen matching is prohibited.
+
     Args:
         screenshot: Full screen capture as BGR numpy array
         template: Template image as grayscale numpy array
-        roi: Optional region of interest (x1, y1, x2, y2)
+        roi: Required region of interest (x1, y1, x2, y2)
         threshold: Minimum confidence threshold for match
         method: OpenCV template matching method
 
     Returns:
         Tuple of (found, confidence, (x, y))
+
+    Raises:
+        ValueError: If ROI is None or invalid
     """
-    if roi is not None:
-        confidence, location = match_template_roi(screenshot, template, roi, method)
-    else:
-        # Search entire screenshot
-        if len(screenshot.shape) == 3:
-            screenshot_gray = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY)
-        else:
-            screenshot_gray = screenshot
-
-        try:
-            result = cv2.matchTemplate(screenshot_gray, template, method)
-            _, confidence, _, location = cv2.minMaxLoc(result)
-        except cv2.error:
-            return False, 0.0, (0, 0)
-
+    _validate_roi(roi)
+    confidence, location = match_template_roi(screenshot, template, roi, method)
     found = confidence >= threshold
     return found, confidence, location
 
@@ -173,21 +190,28 @@ class VisionEngine:
         self,
         screenshot: np.ndarray,
         template_path: str,
-        roi: Optional[Tuple[int, int, int, int]] = None,
+        roi: Tuple[int, int, int, int],
         threshold: float = 0.8
     ) -> Tuple[bool, float, Tuple[int, int]]:
         """
         Find an element by template path.
 
+        SPEED-02: ROI is required - full-screen matching is prohibited.
+
         Args:
             screenshot: Full screen capture
             template_path: Path to template image
-            roi: Optional region of interest
+            roi: Required region of interest (x1, y1, x2, y2)
             threshold: Minimum confidence threshold
 
         Returns:
             Tuple of (found, confidence, (x, y))
+
+        Raises:
+            ValueError: If ROI is None or invalid
         """
+        _validate_roi(roi)
+
         # Check cache
         if template_path not in self._template_cache:
             template = load_template_with_mask(template_path)
@@ -196,7 +220,9 @@ class VisionEngine:
             self._template_cache[template_path] = template
 
         template = self._template_cache[template_path]
-        return find_element(screenshot, template, roi, threshold)
+        confidence, location = match_template_roi(screenshot, template, roi)
+        found = confidence >= threshold
+        return found, confidence, location
 
     def clear_cache(self) -> None:
         """Clear the template cache."""
