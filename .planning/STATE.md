@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 4
-current_plan: Not started
-status: planning
-last_updated: "2026-03-07T12:55:00.879Z"
+current_plan: 01
+status: executing
+last_updated: "2026-03-07T15:44:00Z"
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 9
-  completed_plans: 9
+  total_plans: 6
+  completed_plans: 1
 ---
 
 ---
@@ -67,7 +67,8 @@ Phase 3: Intelligent Wait System       ✓ Complete (3/3 plans)
   Plan 01: Schema Contracts            ✓ Complete
   Plan 02: Wait Image Runtime          ✓ Complete
   Plan 03: Guild Workflow Migration    ✓ Complete
-Phase 4: Error Recovery & ACE          ○ Not started
+Phase 4: Error Recovery & ACE          ○ In Progress (1/6 plans)
+  Plan 01: Recovery Contracts Schema   ✓ Complete
 Phase 5: Performance & Multi-Account   ○ Not started
 ```
 
@@ -82,14 +83,14 @@ Phase 5: Performance & Multi-Account   ○ Not started
 See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 
 **Core value:** Zero-config multi-account automation with XIGNCODE3-friendly pure Python interactions
-**Current focus:** Phase 3 — Intelligent Wait System
+**Current focus:** Phase 4 — Error Recovery & XIGNCODE3 Compliance
 
 ---
 
 ## Active Context
 
-**Last Action:** Completed Plan 03-03: Guild Workflow Migration
-**Next Action:** Phase 3 complete - proceed to Phase 4: Error Recovery & ACE
+**Last Action:** Completed Plan 04-01: Recovery Contracts Schema
+**Next Action:** Continue with Plan 04-02: Error Taxonomy and RecoveryOrchestrator
 
 **Blockers:** None
 
@@ -127,6 +128,10 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 - 7 wait_image steps with 4 appear and 3 disappear states
 - Sleep inventory verification for SPEED-03 compliance
 - Bootstrap fixed to pass vision_engine to ActionDispatcher
+- Plan 04-01 completed with 18 new tests (164 total)
+- RecoveryConfig schema with anchor/on_timeout/max_escalations/audit_context
+- Compiler validation for recovery graph safety (missing targets, cycles)
+- Guild workflow with 6 recovery-annotated wait_image steps
 
 ---
 
@@ -163,6 +168,9 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 | 2026-03-07 | 2-hit stability for image state changes | Prevents flickering false positives |
 | 2026-03-07 | Executor single retry authority | No parallel retry systems |
 | 2026-03-07 | Monotonic clock for timeout deadlines | Prevents clock skew issues |
+| 2026-03-07 | RecoveryConfig with anchor/on_timeout/max_escalations | ERR-02 recovery schema |
+| 2026-03-07 | Compiler validates recovery graph safety | Fail-fast recovery validation |
+| 2026-03-07 | Guild workflow uses open_guild_menu as recovery anchor | ERR-02 implementation |
 
 ---
 
@@ -172,7 +180,8 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 |-------|---------|-----------|----------|-------|
 | 1 | 2026-03-07 | 2026-03-07 | 60 min | All 3 plans complete |
 | 2 | 2026-03-07 | 2026-03-07 | 28 min | All 3 plans complete |
-| 3 | 2026-03-07 | - | - | Plan 01 complete |
+| 3 | 2026-03-07 | 2026-03-07 | 53 min | All 3 plans complete |
+| 4 | 2026-03-07 | - | - | Plan 01 complete |
 
 ---
 
@@ -189,7 +198,8 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 | 03 | 01 | 8 min | 2 | 2 |
 | 03 | 02 | 20 min | 2 | 5 |
 | 03 | 03 | 25 min | 3 | 4 |
+| 04 | 01 | 25 min | 3 | 4 |
 
 ---
 
-*State updated: 2026-03-07 after completing 03-03 (Phase 3 complete)*
+*State updated: 2026-03-07 after completing 04-01*
