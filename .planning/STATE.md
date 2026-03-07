@@ -209,6 +209,7 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 
 - Phase 5.1 inserted after Phase 5: 现在基于这个项目编写一个全功能测试脚本，调用superpowers:brainstorm (URGENT)
 - Phase 6 added: 6 增加一个测试流程序，由你来指挥，我来协助操作并且观察操作进行测试。要求，你以半透明横向功能区显示，默认覆盖在左上角，设计关闭按钮和拖动区域，让我按F1下一步，你输出指令以及预期结果，我来进行观察，随时可以终端测试并且告诉你未按照预期进行的情况
+- Phase 6.1 inserted after Phase 6: 基于Phase 6的测试框架，添加Ferrum硬件连接预检测试作为所有测试的前置检查 (URGENT)
 - Phase 7 added: 基于skills：ferrum和现有的代码，开发一个交互逻辑子程序，满足项目内现有代码所有的交互逻辑调用
 
 ---

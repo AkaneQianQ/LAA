@@ -221,6 +221,16 @@ Plans:
 - Phase 4 → Phase 5: XIGNCODE3 compliance required before multi-account testing
 - Phase 5 → Phase 6: Test flow verifies all previous phases work correctly
 
+### Phase 06.1: 基于Phase 6的测试框架，添加Ferrum硬件连接预检测试作为所有测试的前置检查 (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 6
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 06.1 to break down)
+
 ### Phase 05.1: 现在基于这个项目编写一个全功能测试脚本，调用superpowers:brainstorm (INSERTED)
 
 **Goal:** [Urgent work - to be planned]
