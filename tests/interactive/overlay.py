@@ -30,19 +30,19 @@ class TestOverlay:
     """
 
     # UI Constants
-    WIDTH = 600
-    HEIGHT = 80
+    WIDTH = 900
+    HEIGHT = 60
     TITLE_BAR_HEIGHT = 20
-    CONTENT_HEIGHT = 60
+    CONTENT_HEIGHT = 40
     DEFAULT_X = 0
     DEFAULT_Y = 0
-    ALPHA = 0.7
 
-    # Colors
-    BG_COLOR = "#2b2b2b"
-    TITLE_BG_COLOR = "#1e1e1e"
+    # Colors - Using magenta as transparent key (unlikely to conflict)
+    TRANSPARENT_COLOR = "#ff00ff"
+    BG_COLOR = TRANSPARENT_COLOR  # Fully transparent background
+    TITLE_BG_COLOR = "#1e1e1e"  # Semi-transparent title bar
     TEXT_COLOR = "#ffffff"
-    SUBTLE_TEXT_COLOR = "#888888"
+    SUBTLE_TEXT_COLOR = "#cccccc"
     CLOSE_BUTTON_COLOR = "#ff5f56"
     CLOSE_BUTTON_HOVER_COLOR = "#ff3b30"
 
@@ -87,8 +87,8 @@ class TestOverlay:
         # Always on top
         self._window.wm_attributes('-topmost', True)
 
-        # Set opacity (alpha)
-        self._window.wm_attributes('-alpha', self.ALPHA)
+        # Set transparent color for full transparency except text
+        self._window.wm_attributes('-transparentcolor', self.TRANSPARENT_COLOR)
 
         # Prevent resizing
         self._window.resizable(False, False)
@@ -115,13 +115,13 @@ class TestOverlay:
         self._title_bar.pack(side=tk.TOP, fill=tk.X)
         self._title_bar.pack_propagate(False)
 
-        # Title label (left side of title bar)
+        # Title label (left side of title bar) - using Microsoft YaHei for Chinese
         self._title_label = tk.Label(
             self._title_bar,
             text=self._title_text,
             bg=self.TITLE_BG_COLOR,
             fg=self.TEXT_COLOR,
-            font=("Arial", 9),
+            font=("Microsoft YaHei", 9),
             anchor=tk.W,
             padx=8
         )
@@ -133,7 +133,7 @@ class TestOverlay:
             text="\u2630",  # Trigram for heaven symbol (looks like drag handle)
             bg=self.TITLE_BG_COLOR,
             fg=self.SUBTLE_TEXT_COLOR,
-            font=("Arial", 8),
+            font=("Microsoft YaHei", 8),
             cursor="fleur"
         )
         self._drag_handle.pack(side=tk.LEFT, padx=(0, 5))
@@ -153,7 +153,7 @@ class TestOverlay:
         self._close_button.bind("<Leave>", self._on_close_leave)
         self._close_button.bind("<Button-1>", self._on_close_click)
 
-        # Content area frame
+        # Content area frame - horizontal layout (side by side)
         self._content_frame = tk.Frame(
             self._main_frame,
             bg=self.BG_COLOR,
@@ -163,36 +163,38 @@ class TestOverlay:
         self._content_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         self._content_frame.pack_propagate(False)
 
-        # Instruction text (main display)
+        # Status/step number on the left
+        self._status_label = tk.Label(
+            self._content_frame,
+            text="[--/--]",
+            bg=self.BG_COLOR,
+            fg=self.SUBTLE_TEXT_COLOR,
+            font=("Microsoft YaHei", 10)
+        )
+        self._status_label.pack(side=tk.LEFT, padx=(10, 5), pady=8)
+
+        # Instruction text in the middle (expandable)
         self._instruction_label = tk.Label(
             self._content_frame,
             text="等待测试开始...",
             bg=self.BG_COLOR,
             fg=self.TEXT_COLOR,
-            font=("Arial", 11),
-            wraplength=self.WIDTH - 20,
-            justify=tk.CENTER
+            font=("Microsoft YaHei", 11),
+            wraplength=self.WIDTH - 300,  # Leave room for status and hotkeys
+            justify=tk.LEFT
         )
-        self._instruction_label.pack(expand=True, pady=(5, 0))
+        self._instruction_label.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, pady=8)
 
-        # Hotkey indicators frame (bottom of content)
-        self._hotkey_frame = tk.Frame(
-            self._content_frame,
-            bg=self.BG_COLOR,
-            height=16
-        )
-        self._hotkey_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(0, 2))
-
-        # Hotkey indicator labels
-        hotkey_text = "F1: \u4e0b\u4e00\u6b65  |  END: \u7ec8\u6b62  |  Y: \u901a\u8fc7  |  N: \u5931\u8d25"
+        # Hotkey indicators on the right
+        hotkey_text = "F1:下一步 | END:终止 | Y:通过 | N:失败"
         self._hotkey_label = tk.Label(
-            self._hotkey_frame,
+            self._content_frame,
             text=hotkey_text,
             bg=self.BG_COLOR,
             fg=self.SUBTLE_TEXT_COLOR,
-            font=("Arial", 8)
+            font=("Microsoft YaHei", 9)
         )
-        self._hotkey_label.pack()
+        self._hotkey_label.pack(side=tk.RIGHT, padx=(5, 10), pady=8)
 
     def _setup_dragging(self) -> None:
         """Setup drag functionality for the title bar."""
@@ -247,14 +249,20 @@ class TestOverlay:
         """Hide the overlay window (withdraw)."""
         self._window.withdraw()
 
-    def set_instruction(self, text: str) -> None:
+    def set_instruction(self, text: str, step: int = 0, total: int = 0) -> None:
         """
         Update the instruction text displayed in the overlay.
 
         Args:
             text: The instruction text to display.
+            step: Current step number (0 to hide).
+            total: Total number of steps (0 to hide).
         """
         self._instruction_label.config(text=text)
+        if step > 0 and total > 0:
+            self._status_label.config(text=f"[{step}/{total}]")
+        else:
+            self._status_label.config(text="[--/--]")
         self._window.update_idletasks()
 
     def close(self) -> None:

@@ -50,8 +50,8 @@ class TestOverlayUI:
 
     def test_overlay_geometry(self, overlay):
         """Test that overlay has correct default size."""
-        assert overlay.WIDTH == 600
-        assert overlay.HEIGHT == 80
+        assert overlay.WIDTH == 900
+        assert overlay.HEIGHT == 60
         # Update window to ensure geometry is applied
         overlay._window.update_idletasks()
         # Window geometry may vary by platform, check constants are correct
@@ -78,9 +78,10 @@ class TestOverlayUI:
             # Some platforms may not support this query before window is drawn
             pass
 
-    def test_overlay_opacity(self, overlay):
-        """Test that alpha is approximately 0.7."""
-        assert overlay.ALPHA == 0.7
+    def test_overlay_transparent_color(self, overlay):
+        """Test that transparent color is set for click-through."""
+        assert hasattr(overlay, 'TRANSPARENT_COLOR')
+        assert overlay.TRANSPARENT_COLOR == "#ff00ff"
 
     def test_set_instruction(self, overlay):
         """Test that instruction text updates correctly."""
@@ -142,10 +143,11 @@ class TestOverlayUI:
 
     def test_colors_defined(self, overlay):
         """Test that color constants are defined."""
-        assert overlay.BG_COLOR == "#2b2b2b"
+        # BG_COLOR is now transparent color for click-through
+        assert overlay.BG_COLOR == overlay.TRANSPARENT_COLOR
         assert overlay.TITLE_BG_COLOR == "#1e1e1e"
         assert overlay.TEXT_COLOR == "#ffffff"
-        assert overlay.SUBTLE_TEXT_COLOR == "#888888"
+        assert overlay.SUBTLE_TEXT_COLOR == "#cccccc"
 
     def test_hotkey_indicators_displayed(self, overlay):
         """Test that hotkey indicators are shown in UI."""
@@ -154,6 +156,18 @@ class TestOverlayUI:
         assert "END" in hotkey_text
         assert "Y" in hotkey_text
         assert "N" in hotkey_text
+
+    def test_set_instruction_with_step(self, overlay):
+        """Test that instruction text and step counter update correctly."""
+        test_text = "Test instruction message"
+        overlay.set_instruction(test_text, step=2, total=5)
+        assert overlay._instruction_label.cget("text") == test_text
+        assert overlay._status_label.cget("text") == "[2/5]"
+
+    def test_status_label_hidden_without_step(self, overlay):
+        """Test that status shows placeholder when no step provided."""
+        overlay.set_instruction("Test message")
+        assert overlay._status_label.cget("text") == "[--/--]"
 
 
 class TestOverlayHotkeys:

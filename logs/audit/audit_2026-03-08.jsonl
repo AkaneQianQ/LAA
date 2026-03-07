@@ -1,0 +1,2 @@
+{"ts": "2026-03-07T16:05:49.732347Z", "type": "policy_violation", "action": "input_validation", "detail": {"violation_type": "software_input_requested", "action_count": 0, "violation_count": 1}, "session_seed": 12345}
+{"ts": "2026-03-07T16:07:19.256275Z", "type": "policy_violation", "action": "input_validation", "detail": {"violation_type": "software_input_requested", "action_count": 0, "violation_count": 1}, "session_seed": 12345}
