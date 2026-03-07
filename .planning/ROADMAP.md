@@ -117,7 +117,7 @@ Plans:
 | 01 | Recovery Contracts Schema | ✓ Complete | ERR-02, ERR-04, ACE-02 |
 | 02 | Error Taxonomy & RecoveryOrchestrator | ✓ Complete | ERR-01, ERR-02, ERR-03 |
 | 03 | Structured Logging & Evidence | ✓ Complete | ERR-04 |
-| 04 | ACE Compliance Guard | ✓ Complete | ACE-01, ACE-02, ACE-03, ACE-04 |
+| 04 | ACE Compliance Guard | Complete    | 2026-03-07 |
 | 05 | (Consolidated into Plan 04) | - | - |
 | 06 | Integration Testing | ○ Not started | ERR-01..04, ACE-01..04 |
 

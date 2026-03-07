@@ -37,17 +37,17 @@ Requirements replacing hardcoded sleeps with intelligent image-based waits.
 
 Requirements for handling exceptions and recovering from failures.
 
-- [ ] **ERR-01**: System detects and recovers from network lag conditions
-- [ ] **ERR-02**: System handles UI loading timeouts gracefully
-- [ ] **ERR-03**: System recovers from game client disconnection scenarios
-- [ ] **ERR-04**: System logs all errors with context for debugging
+- [x] **ERR-01**: System detects and recovers from network lag conditions
+- [x] **ERR-02**: System handles UI loading timeouts gracefully
+- [x] **ERR-03**: System recovers from game client disconnection scenarios
+- [x] **ERR-04**: System logs all errors with context for debugging
 
 ### ACE Compliance (ACE)
 
 Requirements ensuring compatibility with Tencent ACE anti-cheat.
 
 - [ ] **ACE-01**: System uses only hardware-based input simulation (no software injection)
-- [ ] **ACE-02**: System implements human-like timing with randomized delays
+- [x] **ACE-02**: System implements human-like timing with randomized delays
 - [ ] **ACE-03**: System avoids any direct game memory access
 - [ ] **ACE-04**: System avoids DLL injection or process manipulation
 
@@ -113,12 +113,12 @@ Deferred features for future consideration.
 | WAIT-02 | Phase 3 | Complete |
 | WAIT-03 | Phase 3 | Complete |
 | WAIT-04 | Phase 3 | Complete |
-| ERR-01 | Phase 4 | Pending |
-| ERR-02 | Phase 4 | Pending |
-| ERR-03 | Phase 4 | Pending |
-| ERR-04 | Phase 4 | Pending |
+| ERR-01 | Phase 4 | Complete |
+| ERR-02 | Phase 4 | Complete |
+| ERR-03 | Phase 4 | Complete |
+| ERR-04 | Phase 4 | Complete |
 | ACE-01 | Phase 5 | Pending |
-| ACE-02 | Phase 5 | Pending |
+| ACE-02 | Phase 5 | Complete |
 | ACE-03 | Phase 5 | Pending |
 | ACE-04 | Phase 5 | Pending |
 | SPEED-01 | Phase 6 | Pending |
