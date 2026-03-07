@@ -7,6 +7,7 @@
 # - Conditional branching with image detection
 # - Loop path for character iteration
 # - Intelligent image-based waits replacing hardcoded delays
+# - Recovery anchors for error rollback (ERR-02 compliance)
 
 name: guild_donation
 start_step_id: open_guild_menu
@@ -18,14 +19,21 @@ wait_defaults:
 
 steps:
   # Step 1: Open guild menu with Alt+U
+  # RECOVERY ANCHOR: Stable entry point for guild donation workflow
   - step_id: open_guild_menu
     action:
       type: press
       key_name: alt+u
     next: wait_menu_appear
     retry: 1
+    recovery:
+      anchor: true
+      audit_context:
+        phase: donation
+        critical: true
 
   # Step 2: Wait for guild menu to appear (intelligent wait)
+  # Recovery: rollback to anchor if menu doesn't appear
   - step_id: wait_menu_appear
     action:
       type: wait_image
@@ -35,6 +43,12 @@ steps:
       timeout_ms: 5000
       poll_interval_ms: 100
     next: click_donate_tab
+    recovery:
+      on_timeout: open_guild_menu
+      max_escalations: 3
+      audit_context:
+        phase: donation
+        step_type: wait_menu
 
   # Step 3: Click donation tab
   - step_id: click_donate_tab
@@ -45,6 +59,7 @@ steps:
     next: wait_donation_ui_appear
 
   # Step 4: Wait for donation UI to appear
+  # Recovery: rollback to anchor if donation UI doesn't appear
   - step_id: wait_donation_ui_appear
     action:
       type: wait_image
@@ -54,6 +69,12 @@ steps:
       timeout_ms: 3000
       poll_interval_ms: 100
     next: click_silver_donate
+    recovery:
+      on_timeout: open_guild_menu
+      max_escalations: 3
+      audit_context:
+        phase: donation
+        step_type: wait_donation_ui
 
   # Step 5: Click silver donation button
   - step_id: click_silver_donate
@@ -64,6 +85,7 @@ steps:
     next: wait_confirm_appear
 
   # Step 6: Wait for confirmation dialog to appear
+  # Recovery: rollback to anchor if confirmation doesn't appear
   - step_id: wait_confirm_appear
     action:
       type: wait_image
@@ -73,6 +95,12 @@ steps:
       timeout_ms: 3000
       poll_interval_ms: 100
     next: click_confirm
+    recovery:
+      on_timeout: open_guild_menu
+      max_escalations: 3
+      audit_context:
+        phase: donation
+        step_type: wait_confirm
 
   # Step 7: Click confirm button
   - step_id: click_confirm
@@ -83,6 +111,7 @@ steps:
     next: wait_confirm_disappear
 
   # Step 8: Wait for confirmation dialog to disappear (donation complete)
+  # Recovery: rollback to anchor if dialog doesn't disappear (stuck UI)
   - step_id: wait_confirm_disappear
     action:
       type: wait_image
@@ -92,6 +121,12 @@ steps:
       timeout_ms: 5000
       poll_interval_ms: 100
     next: close_menu
+    recovery:
+      on_timeout: open_guild_menu
+      max_escalations: 2
+      audit_context:
+        phase: donation
+        step_type: wait_confirm_close
 
   # Step 9: Close guild menu with ESC
   - step_id: close_menu
@@ -159,6 +194,7 @@ steps:
     next: wait_character_select_appear
 
   # Step 15: Wait for character selection screen
+  # Recovery: rollback to anchor if character select doesn't appear
   - step_id: wait_character_select_appear
     action:
       type: wait_image
@@ -168,6 +204,12 @@ steps:
       timeout_ms: 5000
       poll_interval_ms: 100
     next: click_login
+    recovery:
+      on_timeout: open_guild_menu
+      max_escalations: 3
+      audit_context:
+        phase: character_switch
+        step_type: wait_character_select
 
   # Step 16: Click login button
   - step_id: click_login
@@ -178,6 +220,7 @@ steps:
     next: wait_login_complete
 
   # Step 17: Wait for login to complete (character switch)
+  # Recovery: rollback to anchor if login doesn't complete
   - step_id: wait_login_complete
     action:
       type: wait_image
@@ -187,3 +230,9 @@ steps:
       timeout_ms: 10000
       poll_interval_ms: 200
     next: open_guild_menu
+    recovery:
+      on_timeout: open_guild_menu
+      max_escalations: 2
+      audit_context:
+        phase: character_switch
+        step_type: wait_login_complete

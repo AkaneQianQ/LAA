@@ -167,6 +167,89 @@ class TestGuildWorkflowWaitImageCoverage:
         assert defaults.poll_interval_ms > 0, "poll_interval_ms must be positive"
         assert defaults.retry_interval_ms >= 0, "retry_interval_ms must be non-negative"
 
+    def test_workflow_has_recovery_anchor(self):
+        """Workflow has at least one recovery anchor step (ERR-02)."""
+        from core.config_loader import load_workflow_config
+
+        workflow_path = Path(project_root) / 'config' / 'workflows' / 'guild_donation.yaml'
+
+        if not workflow_path.exists():
+            pytest.skip("guild_donation.yaml not yet created")
+
+        compiled = load_workflow_config(workflow_path)
+
+        anchor_steps = [
+            step for step in compiled.steps
+            if step.recovery.anchor
+        ]
+
+        assert len(anchor_steps) > 0, \
+            "Workflow missing recovery anchor steps"
+
+    def test_wait_image_steps_have_recovery_timeout(self):
+        """wait_image steps have recovery on_timeout configuration."""
+        from core.config_loader import load_workflow_config
+        from core.workflow_schema import WaitImageAction
+
+        workflow_path = Path(project_root) / 'config' / 'workflows' / 'guild_donation.yaml'
+
+        if not workflow_path.exists():
+            pytest.skip("guild_donation.yaml not yet created")
+
+        compiled = load_workflow_config(workflow_path)
+
+        wait_image_steps = [
+            step for step in compiled.steps
+            if isinstance(step.action, WaitImageAction)
+        ]
+
+        # At least some wait_image steps should have recovery timeout
+        steps_with_recovery = [
+            step for step in wait_image_steps
+            if step.recovery.on_timeout is not None
+        ]
+
+        assert len(steps_with_recovery) >= 3, \
+            f"Only {len(steps_with_recovery)} wait_image steps have recovery.on_timeout, " \
+            f"expected at least 3"
+
+    def test_recovery_references_valid_anchor(self):
+        """Recovery on_timeout references point to valid anchor steps."""
+        from core.config_loader import load_workflow_config
+
+        workflow_path = Path(project_root) / 'config' / 'workflows' / 'guild_donation.yaml'
+
+        if not workflow_path.exists():
+            pytest.skip("guild_donation.yaml not yet created")
+
+        compiled = load_workflow_config(workflow_path)
+
+        # Build set of valid step IDs
+        valid_step_ids = {step.step_id for step in compiled.steps}
+
+        # Check all recovery on_timeout references
+        for step in compiled.steps:
+            if step.recovery.on_timeout is not None:
+                assert step.recovery.on_timeout in valid_step_ids, \
+                    f"Step '{step.step_id}': recovery.on_timeout references " \
+                    f"non-existent step '{step.recovery.on_timeout}'"
+
+    def test_workflow_compiles_without_errors(self):
+        """Guild donation workflow compiles without compilation errors."""
+        from core.config_loader import load_workflow_config
+
+        workflow_path = Path(project_root) / 'config' / 'workflows' / 'guild_donation.yaml'
+
+        if not workflow_path.exists():
+            pytest.skip("guild_donation.yaml not yet created")
+
+        # Should compile without raising
+        compiled = load_workflow_config(workflow_path)
+
+        assert compiled is not None
+        assert compiled.name == 'guild_donation'
+        assert len(compiled.steps) > 0
+
 
 class TestWorkflowStepOverrides:
     """Test step-level timeout/poll interval overrides."""
