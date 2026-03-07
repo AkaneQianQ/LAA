@@ -109,17 +109,15 @@ Plans:
 
 **Goal:** Implement robust error recovery for network/UI issues and ensure all interactions comply with Tencent ACE anti-cheat detection.
 
-**Status:** In Progress (3/6 plans)
+**Status:** ✓ Complete (4/4 plans)
 
 **Plans:**
 | Plan | Name | Status | Requirements |
 |------|------|--------|--------------|
-| 01 | Recovery Contracts Schema | ✓ Complete | ERR-02, ERR-04, ACE-02 |
+| 01 | Recovery Contracts Schema | ✓ Complete | ERR-02, ERR-04 |
 | 02 | Error Taxonomy & RecoveryOrchestrator | ✓ Complete | ERR-01, ERR-02, ERR-03 |
 | 03 | Structured Logging & Evidence | ✓ Complete | ERR-04 |
-| 04 | ACE Compliance Guard | Complete    | 2026-03-07 |
-| 05 | (Consolidated into Plan 04) | - | - |
-| 06 | Integration Testing | ○ Not started | ERR-01..04, ACE-01..04 |
+| 04 | ACE Compliance Guard | ✓ Complete | ACE-01, ACE-02, ACE-03, ACE-04 |
 
 **Requirements:**
 - ERR-01: System detects and recovers from network lag conditions
@@ -145,6 +143,16 @@ Plans:
 ## Phase 5: Performance & Multi-Account
 
 **Goal:** Optimize execution speed through parallel processing and ROI constraints, and implement seamless multi-account operation.
+
+**Status:** ○ Not started (0/4 plans)
+
+**Plans:**
+| Plan | Name | Wave | Requirements | Files Modified |
+|------|------|------|--------------|----------------|
+| 01 | Frame Caching System | 1 | SPEED-04 | core/frame_cache.py, core/vision_engine.py |
+| 02 | Parallel ROI Matching | 1 | SPEED-01, SPEED-02 | core/parallel_matcher.py, modules/character_detector.py |
+| 03 | Account Manager and Progress Persistence | 2 | MULTI-01, MULTI-02, MULTI-04 | core/account_manager.py, core/progress_tracker.py |
+| 04 | Account Switching and Sleep Verification | 2 | MULTI-03, SPEED-03 | core/account_switcher.py, modules/workflow_bootstrap.py |
 
 **Requirements:**
 - SPEED-01: System processes images in parallel where possible
@@ -175,10 +183,21 @@ Plans:
 - Phase 3 → Phase 4: Intelligent waits required for error recovery
 - Phase 4 → Phase 5: XIGNCODE3 compliance required before multi-account testing
 
+### Phase 5 Wave Structure
+
+**Wave 1 (Parallel Execution):**
+- Plan 05-01: Frame Caching System (SPEED-04)
+- Plan 05-02: Parallel ROI Matching (SPEED-01, SPEED-02)
+
+**Wave 2 (Sequential - depends on Wave 1):**
+- Plan 05-03: Account Manager and Progress Persistence (MULTI-01, MULTI-02, MULTI-04)
+- Plan 05-04: Account Switching and Sleep Verification (MULTI-03, SPEED-03)
+
 ### Risk Areas
 - **Phase 1**: Character slot detection accuracy depends on template images
 - **Phase 3**: Replacing all sleeps may expose race conditions
 - **Phase 4**: XIGNCODE3 compliance cannot be fully tested without actual game
+- **Phase 5**: Parallel processing may have GIL contention; requires benchmarking
 
 ### Rollback Strategy
 - Each phase maintains backward compatibility with existing code
@@ -188,3 +207,4 @@ Plans:
 ---
 
 *Roadmap created: 2026-03-07*
+*Updated: 2026-03-07 with Phase 5 plans*
