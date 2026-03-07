@@ -152,21 +152,31 @@ class WorkflowExecutor:
         Returns:
             Tuple of (success, error)
         """
+        import time
+
         # Get retry count from step (default: 0 = no retries)
         retry_count = getattr(step, 'retry', 0)
         max_attempts = retry_count + 1  # Initial attempt + retries
+
+        # Get retry interval (step override > workflow default)
+        retry_interval_ms = self._resolve_retry_interval_ms(step)
+        retry_interval_sec = retry_interval_ms / 1000.0
 
         last_error: Optional[Exception] = None
 
         for attempt in range(max_attempts):
             try:
+                # Pass workflow defaults to dispatcher for wait_image resolution
+                if hasattr(self.workflow, 'wait_defaults'):
+                    self.dispatcher._workflow_defaults = self.workflow.wait_defaults
                 self.dispatcher.dispatch(step)
                 self.steps_executed += 1
                 return True, None
             except ExecutionError as e:
                 last_error = e
                 if attempt < max_attempts - 1:
-                    # Will retry
+                    # Will retry - wait configured interval before next attempt
+                    time.sleep(retry_interval_sec)
                     continue
                 else:
                     # No more retries - count the final failed attempt
@@ -178,6 +188,28 @@ class WorkflowExecutor:
                 return False, e
 
         return False, last_error
+
+    def _resolve_retry_interval_ms(self, step: WorkflowStep) -> int:
+        """
+        Resolve retry interval with step > workflow priority.
+
+        Args:
+            step: Workflow step that may have retry_interval_ms override
+
+        Returns:
+            Retry interval in milliseconds
+        """
+        # Step-level override
+        step_interval = getattr(step, 'retry_interval_ms', None)
+        if step_interval is not None:
+            return step_interval
+
+        # Workflow default from compiled workflow
+        if hasattr(self.workflow, 'wait_defaults'):
+            return self.workflow.wait_defaults.retry_interval_ms
+
+        # Fallback default
+        return 1000  # 1 second
 
     def _resolve_next_step(self, step: WorkflowStep) -> Optional[str]:
         """
