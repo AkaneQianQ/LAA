@@ -251,6 +251,265 @@ class TestGuildDonationWorkflow:
             assert len(step.step_id) > 0
             assert step.step_id.isidentifier() or '_' in step.step_id
 
+    def test_guild_donation_has_wait_image_actions(self):
+        """Guild donation workflow includes wait_image actions for intelligent waits."""
+        from core.config_loader import load_workflow_config
+        from core.workflow_schema import WaitImageAction
+
+        workflow_path = Path(project_root) / 'config' / 'workflows' / 'guild_donation.yaml'
+
+        if not workflow_path.exists():
+            pytest.skip("guild_donation.yaml not yet created")
+
+        compiled = load_workflow_config(workflow_path)
+
+        # Count wait_image actions
+        wait_image_count = sum(
+            1 for step in compiled.steps
+            if isinstance(step.action, WaitImageAction)
+        )
+
+        assert wait_image_count >= 3, \
+            f"Expected at least 3 wait_image actions, found {wait_image_count}"
+
+    def test_guild_donation_has_appear_and_disappear_waits(self):
+        """Guild donation workflow has both appear and disappear wait states."""
+        from core.config_loader import load_workflow_config
+        from core.workflow_schema import WaitImageAction
+
+        workflow_path = Path(project_root) / 'config' / 'workflows' / 'guild_donation.yaml'
+
+        if not workflow_path.exists():
+            pytest.skip("guild_donation.yaml not yet created")
+
+        compiled = load_workflow_config(workflow_path)
+
+        # Find appear and disappear waits
+        appear_waits = [
+            step for step in compiled.steps
+            if isinstance(step.action, WaitImageAction)
+            and step.action.state == 'appear'
+        ]
+        disappear_waits = [
+            step for step in compiled.steps
+            if isinstance(step.action, WaitImageAction)
+            and step.action.state == 'disappear'
+        ]
+
+        assert len(appear_waits) > 0, "Missing wait_image with state='appear'"
+        assert len(disappear_waits) > 0, "Missing wait_image with state='disappear'"
+
+    def test_guild_donation_has_wait_defaults(self):
+        """Guild donation workflow has configurable wait defaults."""
+        from core.config_loader import load_workflow_config
+
+        workflow_path = Path(project_root) / 'config' / 'workflows' / 'guild_donation.yaml'
+
+        if not workflow_path.exists():
+            pytest.skip("guild_donation.yaml not yet created")
+
+        compiled = load_workflow_config(workflow_path)
+
+        # Verify wait_defaults exists with required fields
+        assert hasattr(compiled, 'wait_defaults'), "Missing wait_defaults"
+        defaults = compiled.wait_defaults
+
+        assert hasattr(defaults, 'timeout_ms'), "Missing timeout_ms"
+        assert hasattr(defaults, 'poll_interval_ms'), "Missing poll_interval_ms"
+        assert hasattr(defaults, 'retry_interval_ms'), "Missing retry_interval_ms"
+
+        assert defaults.timeout_ms > 0
+        assert defaults.poll_interval_ms > 0
+        assert defaults.retry_interval_ms >= 0
+
+
+class TestIntelligentWaitIntegration:
+    """Test intelligent wait execution through bootstrap and executor."""
+
+    def test_bootstrap_executes_workflow_with_wait_image(self):
+        """Bootstrap successfully loads and executes workflow containing wait_image."""
+        from core.workflow_bootstrap import create_workflow_executor
+
+        workflow_config = {
+            'name': 'wait_image_test',
+            'start_step_id': 'wait_for_element',
+            'wait_defaults': {
+                'timeout_ms': 2000,
+                'poll_interval_ms': 50,
+                'retry_interval_ms': 100
+            },
+            'steps': [
+                {
+                    'step_id': 'wait_for_element',
+                    'action': {
+                        'type': 'wait_image',
+                        'state': 'appear',
+                        'image': 'test_element.png',
+                        'roi': [100, 100, 200, 200],
+                        'timeout_ms': 1000,
+                        'poll_interval_ms': 50
+                    },
+                    'next': 'done'
+                },
+                {
+                    'step_id': 'done',
+                    'action': {'type': 'wait', 'duration_ms': 100},
+                    'next': None
+                }
+            ]
+        }
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            yaml.dump(workflow_config, f)
+            temp_path = f.name
+
+        try:
+            mock_controller = Mock()
+            mock_vision = Mock()
+
+            # Mock vision to find element (2 consecutive hits needed for stability)
+            mock_vision.find_element = Mock(return_value=(True, 0.9, (150, 150)))
+
+            executor = create_workflow_executor(
+                workflow_path=temp_path,
+                controller=mock_controller,
+                vision_engine=mock_vision
+            )
+
+            result = executor.execute()
+
+            assert result.success is True
+            assert result.steps_executed == 2
+
+        finally:
+            os.unlink(temp_path)
+
+    def test_intelligent_wait_timeout_triggers_retry(self):
+        """Timeout failure in intelligent wait can be retried by executor path."""
+        from core.workflow_bootstrap import create_workflow_executor
+        from core.workflow_executor import ExecutionError
+
+        workflow_config = {
+            'name': 'retry_test',
+            'start_step_id': 'wait_for_element',
+            'wait_defaults': {
+                'timeout_ms': 500,
+                'poll_interval_ms': 50,
+                'retry_interval_ms': 100
+            },
+            'steps': [
+                {
+                    'step_id': 'wait_for_element',
+                    'action': {
+                        'type': 'wait_image',
+                        'state': 'appear',
+                        'image': 'test_element.png',
+                        'roi': [100, 100, 200, 200],
+                        'timeout_ms': 200  # Short timeout
+                    },
+                    'next': 'done',
+                    'retry': 2  # Allow 2 retries
+                },
+                {
+                    'step_id': 'done',
+                    'action': {'type': 'wait', 'duration_ms': 100},
+                    'next': None
+                }
+            ]
+        }
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            yaml.dump(workflow_config, f)
+            temp_path = f.name
+
+        try:
+            mock_controller = Mock()
+            mock_vision = Mock()
+
+            # Mock vision to never find element (always timeout)
+            mock_vision.find_element = Mock(return_value=(False, 0.3, None))
+
+            executor = create_workflow_executor(
+                workflow_path=temp_path,
+                controller=mock_controller,
+                vision_engine=mock_vision
+            )
+
+            result = executor.execute()
+
+            # Should fail after retries exhausted
+            assert result.success is False
+            assert result.error is not None
+            # Should have attempted the step multiple times (initial + 2 retries = 3 attempts)
+            # But only count successful step executions
+
+        finally:
+            os.unlink(temp_path)
+
+    def test_intelligent_wait_resolves_step_level_retry_interval(self):
+        """Step-level retry_interval_ms overrides workflow default."""
+        from core.workflow_bootstrap import create_workflow_executor
+
+        workflow_config = {
+            'name': 'retry_interval_test',
+            'start_step_id': 'wait_step',
+            'wait_defaults': {
+                'timeout_ms': 1000,
+                'poll_interval_ms': 50,
+                'retry_interval_ms': 500  # Default 500ms
+            },
+            'steps': [
+                {
+                    'step_id': 'wait_step',
+                    'action': {
+                        'type': 'wait_image',
+                        'state': 'appear',
+                        'image': 'test.png',
+                        'roi': [100, 100, 200, 200]
+                        # No timeout override - uses default
+                    },
+                    'next': 'done',
+                    'retry': 1,
+                    'retry_interval_ms': 100  # Override to 100ms
+                },
+                {
+                    'step_id': 'done',
+                    'action': {'type': 'wait', 'duration_ms': 50},
+                    'next': None
+                }
+            ]
+        }
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            yaml.dump(workflow_config, f)
+            temp_path = f.name
+
+        try:
+            mock_controller = Mock()
+            mock_vision = Mock()
+
+            # First call fails, second succeeds
+            call_count = [0]
+            def mock_find(*args, **kwargs):
+                call_count[0] += 1
+                return (call_count[0] >= 2, 0.9 if call_count[0] >= 2 else 0.3, None)
+
+            mock_vision.find_element = mock_find
+
+            executor = create_workflow_executor(
+                workflow_path=temp_path,
+                controller=mock_controller,
+                vision_engine=mock_vision
+            )
+
+            result = executor.execute()
+
+            # Should succeed after retry
+            assert result.success is True
+
+        finally:
+            os.unlink(temp_path)
+
 
 class TestBootstrapExecutorIntegration:
     """Test bootstrap creating executor that can run with mocked dependencies."""

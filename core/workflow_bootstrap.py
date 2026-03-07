@@ -50,7 +50,7 @@ def create_workflow_executor(
     compiled = load_workflow_config(workflow_path)
 
     # Create runtime components
-    dispatcher = ActionDispatcher(controller)
+    dispatcher = ActionDispatcher(controller, vision_engine)
     condition_evaluator = ConditionEvaluator(vision_engine)
 
     # Create and return executor
