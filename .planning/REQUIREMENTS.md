@@ -28,9 +28,9 @@ Requirements for YAML/JSON-based task orchestration.
 
 Requirements replacing hardcoded sleeps with intelligent image-based waits.
 
-- [ ] **WAIT-01**: System waits for images to appear before proceeding
-- [ ] **WAIT-02**: System waits for images to disappear before proceeding
-- [ ] **WAIT-03**: System supports configurable timeouts for all wait operations
+- [x] **WAIT-01**: System waits for images to appear before proceeding
+- [x] **WAIT-02**: System waits for images to disappear before proceeding
+- [x] **WAIT-03**: System supports configurable timeouts for all wait operations
 - [ ] **WAIT-04**: System implements automatic retry logic on timeout
 
 ### Error Recovery (ERR)
@@ -109,9 +109,9 @@ Deferred features for future consideration.
 | CFG-02 | Phase 2 | Pending |
 | CFG-03 | Phase 2 | Pending |
 | CFG-04 | Phase 2 | Pending |
-| WAIT-01 | Phase 3 | Pending |
-| WAIT-02 | Phase 3 | Pending |
-| WAIT-03 | Phase 3 | Pending |
+| WAIT-01 | Phase 3 | Complete |
+| WAIT-02 | Phase 3 | Complete |
+| WAIT-03 | Phase 3 | Complete |
 | WAIT-04 | Phase 3 | Pending |
 | ERR-01 | Phase 4 | Pending |
 | ERR-02 | Phase 4 | Pending |
