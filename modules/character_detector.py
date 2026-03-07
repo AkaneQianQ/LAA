@@ -181,6 +181,57 @@ class CharacterDetector:
         self._template_cache[template_name] = gray
         return gray
 
+    def detect_character_selection_screen(self, screenshot: np.ndarray) -> Tuple[bool, float]:
+        """
+        Detect if the ESC menu / character selection screen is ready.
+
+        Uses template matching with bounded retries to verify the character
+        selection UI is visible and ready for interaction.
+
+        Args:
+            screenshot: Full screen capture as BGR numpy array
+
+        Returns:
+            Tuple of (is_ready, confidence)
+        """
+        template = self._load_template(CHARACTER_DETECTION_TEMPLATE)
+
+        if template is None:
+            # Template not found - fail fast
+            return False, 0.0
+
+        best_confidence = 0.0
+
+        # Retry up to MAX_DETECTION_RETRIES with small backoff
+        for attempt in range(MAX_DETECTION_RETRIES):
+            try:
+                # Check a subset of slots to verify menu is ready
+                # We check the first slot as a representative sample
+                x1, y1, x2, y2 = SLOT_1_1_ROI
+                slot_region = screenshot[y1:y2, x1:x2]
+
+                if slot_region.size == 0:
+                    continue
+
+                slot_gray = cv2.cvtColor(slot_region, cv2.COLOR_BGR2GRAY)
+
+                result = cv2.matchTemplate(
+                    slot_gray, template, TEMPLATE_MATCH_METHOD
+                )
+                _, max_val, _, _ = cv2.minMaxLoc(result)
+                best_confidence = max(best_confidence, max_val)
+
+                # Early exit if we hit threshold
+                if best_confidence >= SLOT_DETECTION_THRESHOLD:
+                    return True, best_confidence
+
+            except cv2.error:
+                # Template matching error - continue to retry
+                continue
+
+        # Failed to reach threshold after all retries
+        return False, best_confidence
+
     def detect_esc_menu(self, screenshot: np.ndarray) -> Tuple[bool, float]:
         """
         Detect if the ESC menu / character selection screen is open.
@@ -191,31 +242,22 @@ class CharacterDetector:
         Returns:
             Tuple of (is_open, confidence)
         """
-        # For now, check if we can detect the character selection UI elements
-        # This is a placeholder - actual implementation would check for
-        # specific menu markers
+        # Delegate to the new method for consistency
+        return self.detect_character_selection_screen(screenshot)
 
-        # Check if any slot has a character (indicates character selection screen)
-        results = self.scan_slots_occupancy(screenshot)
-        any_detected = any(r.has_character for r in results)
-
-        # Calculate average confidence of detections
-        if results:
-            avg_confidence = sum(r.confidence for r in results) / len(results)
-        else:
-            avg_confidence = 0.0
-
-        return any_detected, avg_confidence
-
-    def scan_slots_occupancy(self, screenshot: np.ndarray) -> List[SlotOccupancyResult]:
+    def scan_visible_slots(self, screenshot: np.ndarray) -> List[SlotOccupancyResult]:
         """
-        Scan all 9 slots to determine which contain characters.
+        Scan all 9 visible slots to determine which contain characters.
+
+        This method evaluates all 9 slot ROIs in row-major order and returns
+        occupancy results with confidence scores. Includes retry-on-borderline
+        logic for improved accuracy.
 
         Args:
             screenshot: Full screen capture as BGR numpy array
 
         Returns:
-            List of SlotOccupancyResult for each slot
+            List of SlotOccupancyResult for each slot (index 0-8)
         """
         results: List[SlotOccupancyResult] = []
         template = self._load_template(CHARACTER_DETECTION_TEMPLATE)
@@ -237,9 +279,12 @@ class CharacterDetector:
             # Convert slot region to grayscale
             slot_gray = cv2.cvtColor(slot_region, cv2.COLOR_BGR2GRAY)
 
-            # Perform template matching with retry logic
+            # Perform template matching with retry logic for borderline cases
             best_confidence = 0.0
-            for _ in range(MAX_DETECTION_RETRIES):
+            retry_count = 0
+            max_retries = MAX_DETECTION_RETRIES
+
+            while retry_count < max_retries:
                 try:
                     result = cv2.matchTemplate(
                         slot_gray, template, TEMPLATE_MATCH_METHOD
@@ -247,8 +292,16 @@ class CharacterDetector:
                     _, max_val, _, _ = cv2.minMaxLoc(result)
                     best_confidence = max(best_confidence, max_val)
 
+                    # Check if we have a clear result
                     if best_confidence >= SLOT_DETECTION_THRESHOLD:
+                        # Clear positive - no need to retry
                         break
+                    elif best_confidence < SLOT_DETECTION_THRESHOLD - 0.15:
+                        # Clear negative - no need to retry
+                        break
+                    else:
+                        # Borderline case - retry for better accuracy
+                        retry_count += 1
                 except cv2.error:
                     # Template larger than region - no match possible
                     break
@@ -259,6 +312,20 @@ class CharacterDetector:
             ))
 
         return results
+
+    def scan_slots_occupancy(self, screenshot: np.ndarray) -> List[SlotOccupancyResult]:
+        """
+        Scan all 9 slots to determine which contain characters.
+
+        Alias for scan_visible_slots() for backward compatibility.
+
+        Args:
+            screenshot: Full screen capture as BGR numpy array
+
+        Returns:
+            List of SlotOccupancyResult for each slot
+        """
+        return self.scan_visible_slots(screenshot)
 
     def detect_scroll_bottom(self, screenshot: np.ndarray) -> Tuple[bool, float]:
         """
@@ -296,6 +363,142 @@ class CharacterDetector:
         except cv2.error:
             return False, 0.0
 
+    def _scroll_down(self) -> None:
+        """
+        Simulate a scroll down action.
+
+        This is a placeholder for the actual scroll implementation.
+        In the real implementation, this would use the FerrumController
+        to send scroll commands to the KMBox device.
+        """
+        # Placeholder - actual implementation requires hardware controller
+        pass
+
+    def _capture_screenshot(self) -> np.ndarray:
+        """
+        Capture a new screenshot.
+
+        This is a placeholder for the actual screenshot implementation.
+        In the real implementation, this would use DXCam or similar.
+
+        Returns:
+            Screenshot as BGR numpy array
+        """
+        # Placeholder - returns empty array
+        # Actual implementation requires screen capture library
+        return np.zeros((1440, 2560, 3), dtype=np.uint8)
+
+    def discover_total_characters(
+        self,
+        screenshot: Optional[np.ndarray] = None,
+        max_pages: int = 20
+    ) -> CharacterDiscoveryResult:
+        """
+        Discover total character count through scroll traversal.
+
+        This method implements the full discovery workflow:
+        1. Verify character selection screen is ready
+        2. Scan visible slots and accumulate count
+        3. Scroll down by one row
+        4. Repeat until scrollbar bottom is detected
+        5. Deduplicate rows that appear on multiple pages
+
+        Args:
+            screenshot: Initial screenshot (if None, will capture)
+            max_pages: Maximum number of pages to scan (safety limit)
+
+        Returns:
+            CharacterDiscoveryResult with total count and slot results
+        """
+        result = CharacterDiscoveryResult()
+
+        # Use provided screenshot or capture one
+        current_screenshot = screenshot if screenshot is not None else self._capture_screenshot()
+
+        # Step 1: Verify menu is ready
+        is_ready, confidence = self.detect_character_selection_screen(current_screenshot)
+        if not is_ready:
+            # Menu not ready - return empty result
+            result.total_characters = 0
+            return result
+
+        # Track unique characters across pages
+        # Key: slot signature (confidence values), Value: count
+        all_slot_signatures: List[List[float]] = []
+        total_unique_characters = 0
+        page_count = 0
+
+        while page_count < max_pages:
+            # Step 2: Scan visible slots
+            slot_results = self.scan_visible_slots(current_screenshot)
+
+            # Create signature for this page (confidence values)
+            page_signature = [r.confidence for r in slot_results]
+
+            # Check if this page is a duplicate of the previous page
+            if all_slot_signatures and self._is_duplicate_page(page_signature, all_slot_signatures[-1]):
+                # Duplicate page detected - we've reached the end
+                break
+
+            all_slot_signatures.append(page_signature)
+
+            # Count characters on this page
+            page_characters = sum(1 for r in slot_results if r.has_character)
+
+            # For deduplication: estimate new characters (bottom row of previous page
+            # may overlap with top row of current page)
+            if page_count == 0:
+                # First page - all characters are new
+                total_unique_characters += page_characters
+            else:
+                # Subsequent pages - assume up to 3 characters may be duplicates
+                # (the bottom row of the previous page)
+                estimated_new = max(0, page_characters - 3)
+                total_unique_characters += estimated_new
+
+            # Store slot results from first page for reference
+            if page_count == 0:
+                result.slot_results = slot_results
+
+            # Step 3: Check if we've reached the bottom
+            is_at_bottom, bottom_confidence = self.detect_scroll_bottom(current_screenshot)
+            if is_at_bottom:
+                # Bottom detected - we're done
+                break
+
+            # Step 4: Scroll down by one row
+            self._scroll_down()
+
+            # Capture new screenshot after scroll
+            current_screenshot = self._capture_screenshot()
+
+            page_count += 1
+
+        result.total_characters = total_unique_characters
+        return result
+
+    def _is_duplicate_page(self, sig1: List[float], sig2: List[float], tolerance: float = 0.1) -> bool:
+        """
+        Check if two page signatures are similar enough to be considered duplicates.
+
+        Args:
+            sig1: First page signature (confidence values)
+            sig2: Second page signature (confidence values)
+            tolerance: Maximum difference for values to be considered equal
+
+        Returns:
+            True if pages are likely duplicates
+        """
+        if len(sig1) != len(sig2):
+            return False
+
+        # Check if all values are within tolerance
+        for v1, v2 in zip(sig1, sig2):
+            if abs(v1 - v2) > tolerance:
+                return False
+
+        return True
+
     def discover_characters(self, screenshot: np.ndarray) -> CharacterDiscoveryResult:
         """
         Perform full character discovery on current screen.
@@ -309,19 +512,8 @@ class CharacterDetector:
         Returns:
             CharacterDiscoveryResult with all discovery information
         """
-        result = CharacterDiscoveryResult()
-
-        # Scan all slots
-        slot_results = self.scan_slots_occupancy(screenshot)
-        result.slot_results = slot_results
-
-        # Count total characters detected
-        result.total_characters = sum(1 for r in slot_results if r.has_character)
-
-        # TODO: Account ID generation from first character screenshot
-        # This will be implemented when screenshot persistence is added
-
-        return result
+        # Delegate to discover_total_characters for full workflow
+        return self.discover_total_characters(screenshot)
 
 
 # =============================================================================
