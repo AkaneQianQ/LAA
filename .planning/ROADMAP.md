@@ -28,7 +28,7 @@
 | Plan | Name | Status | Requirements |
 |------|------|--------|--------------|
 | 01 | Contracts and Persistence Foundation | Complete    | 2026-03-07 |
-| 02 | Vision Engine Integration | ✓ Complete | CHAR-01, CHAR-02, CHAR-03 |
+| 02 | Vision Engine Integration | Complete    | 2026-03-07 |
 | 03 | Account Indexing and Screenshot Cache | ✓ Complete | CHAR-04, CHAR-05 |
 
 **Requirements:**
