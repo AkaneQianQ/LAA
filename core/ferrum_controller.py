@@ -7,10 +7,31 @@ FerrumController - Serial communication layer for Ferrum hardware device.
 import serial
 import time
 import logging
-from typing import Optional
+from typing import Optional, List, Dict
 
 # 配置日志
 logger = logging.getLogger(__name__)
+
+# HID Key Code Mapping (HID Usage Table 1.5)
+KEY_MAP: Dict[str, int] = {
+    "esc": 41,
+    "u": 24,
+    "up": 38,
+    "down": 40,
+    "left": 37,
+    "right": 39,
+    "enter": 40,
+    "alt": 226,  # Left Alt
+    "space": 44,
+    "tab": 43,
+}
+
+# Mouse Button Constants (per Ferrum documentation)
+BUTTON_LEFT = 0
+BUTTON_RIGHT = 1
+BUTTON_MIDDLE = 2
+BUTTON_SIDE_REAR = 3
+BUTTON_SIDE_FRONT = 4
 
 
 class FerrumConnectionError(Exception):
@@ -71,6 +92,16 @@ class FerrumController:
         self._connected = False
         self._serial = None
 
+    def _validate_connection(self) -> None:
+        """
+        验证串口连接状态
+
+        Raises:
+            FerrumConnectionError: 串口未连接或已关闭
+        """
+        if not self._connected or not self._serial or not self._serial.is_open:
+            raise FerrumConnectionError("串口未连接")
+
     def _send_command(self, command: str, retry: bool = True) -> str:
         """
         发送命令到Ferrum设备并读取响应
@@ -89,8 +120,7 @@ class FerrumController:
         Raises:
             FerrumConnectionError: 串口未连接或通信失败
         """
-        if not self._connected or not self._serial or not self._serial.is_open:
-            raise FerrumConnectionError("串口未连接")
+        self._validate_connection()
 
         try:
             # 发送命令，添加\r\n终止符
