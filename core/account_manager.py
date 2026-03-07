@@ -7,6 +7,7 @@ Supports automatic account discovery, context switching, and progress tracking.
 Exports:
     AccountManager: Manages account lifecycle and context switching
     AccountContext: Immutable runtime context for a specific account
+    AccountManagerError: Exception raised for account manager errors
 """
 
 import os
@@ -21,6 +22,11 @@ from core.progress_tracker import ProgressTracker
 
 if TYPE_CHECKING:
     from modules.character_detector import CharacterDetector
+
+
+class AccountManagerError(Exception):
+    """Exception raised for AccountManager errors."""
+    pass
 
 
 # =============================================================================
@@ -121,10 +127,18 @@ class AccountManager:
 
         # Use detector to discover account
         result = self.detector.discover_account(screenshot)
-        return {
-            'account_hash': result.account_hash,
-            'character_count': result.character_count,
-        }
+
+        # Handle both dict and object return types
+        if isinstance(result, dict):
+            return {
+                'account_hash': result.get('account_hash'),
+                'character_count': result.get('character_count', 0),
+            }
+        else:
+            return {
+                'account_hash': result.account_hash,
+                'character_count': result.character_count,
+            }
 
     def _create_context(
         self,
@@ -154,6 +168,58 @@ class AccountManager:
             progress_tracker=progress_tracker
         )
 
+    def discover_and_create(self, screenshot: np.ndarray) -> AccountContext:
+        """
+        Discover account from screenshot and create context.
+
+        This method uses the CharacterDetector to identify the account,
+        creates the account directory structure, initializes the progress
+        database, and returns an AccountContext.
+
+        Args:
+            screenshot: Screenshot of character selection screen
+
+        Returns:
+            AccountContext for the discovered account
+
+        Raises:
+            AccountManagerError: If no detector is available
+        """
+        if self.detector is None:
+            raise AccountManagerError("No CharacterDetector provided for account discovery")
+
+        # Use detector to discover account
+        discovery = self.detector.discover_account(screenshot)
+        account_hash = discovery.get('account_hash')
+        character_count = discovery.get('character_count', 0)
+
+        if not account_hash:
+            raise AccountManagerError("Failed to discover account hash from screenshot")
+
+        # Get or create account in main database
+        from core.database import init_database, get_or_create_account
+        main_db = self._get_main_db_path()
+        init_database(main_db)
+        account_id = get_or_create_account(main_db, account_hash)
+
+        # Create context (this also initializes the database)
+        with self._lock:
+            self._current_context = self._create_context(
+                account_hash=account_hash,
+                account_id=account_id,
+                character_count=character_count
+            )
+
+            # Fire callbacks
+            for callback in self._on_switch_callbacks:
+                try:
+                    callback(self._current_context)
+                except Exception:
+                    # Callback errors shouldn't break discovery
+                    pass
+
+            return self._current_context
+
     def get_or_create_context(self, screenshot: np.ndarray) -> AccountContext:
         """
         Get existing account context or create new one from screenshot.
@@ -175,8 +241,9 @@ class AccountManager:
         character_count = discovery['character_count']
 
         # Get or create account in main database
-        from core.database import get_or_create_account
+        from core.database import init_database, get_or_create_account
         main_db = self._get_main_db_path()
+        init_database(main_db)
         account_id = get_or_create_account(main_db, account_hash)
 
         # Create context
@@ -199,15 +266,16 @@ class AccountManager:
             AccountContext for the switched account
 
         Raises:
-            ValueError: If account not found in database
+            AccountManagerError: If account not found in database
         """
-        from core.database import find_account_by_hash
+        from core.database import init_database, find_account_by_hash
 
         main_db = self._get_main_db_path()
+        init_database(main_db)
         account = find_account_by_hash(main_db, account_hash)
 
         if account is None:
-            raise ValueError(f"Account with hash '{account_hash}' not found")
+            raise AccountManagerError(f"Account with hash '{account_hash}' not found")
 
         # Get character count from detector or default
         character_count = 9  # Default, could be stored in DB
@@ -242,8 +310,9 @@ class AccountManager:
         Returns:
             List of account dictionaries with id, account_hash, created_at
         """
-        from core.database import list_all_accounts
+        from core.database import init_database, list_all_accounts
         main_db = self._get_main_db_path()
+        init_database(main_db)
         return list_all_accounts(main_db)
 
     def on_switch(self, callback: Callable[[AccountContext], None]) -> None:
