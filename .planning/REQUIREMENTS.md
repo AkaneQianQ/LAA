@@ -58,7 +58,7 @@ Requirements for improving execution speed.
 - [ ] **SPEED-01**: System processes images in parallel where possible
 - [ ] **SPEED-02**: System constrains template matching to specified ROIs
 - [ ] **SPEED-03**: System eliminates all hardcoded time.sleep() calls
-- [ ] **SPEED-04**: System implements frame caching to reduce capture overhead
+- [x] **SPEED-04**: System implements frame caching to reduce capture overhead
 
 ### Multi-Account Support (MULTI)
 
@@ -124,7 +124,7 @@ Deferred features for future consideration.
 | SPEED-01 | Phase 6 | Pending |
 | SPEED-02 | Phase 6 | Pending |
 | SPEED-03 | Phase 6 | Pending |
-| SPEED-04 | Phase 6 | Pending |
+| SPEED-04 | Phase 6 | Complete |
 | MULTI-01 | Phase 7 | Pending |
 | MULTI-02 | Phase 7 | Pending |
 | MULTI-03 | Phase 7 | Pending |
