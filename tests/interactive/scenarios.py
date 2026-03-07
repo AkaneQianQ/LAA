@@ -11,6 +11,30 @@ from tests.interactive.test_flow import TestStep, TestScenario
 
 
 # =============================================================================
+# Hardware Check Scenario (Meta-scenario for infrastructure validation)
+# =============================================================================
+
+HARDWARE_CHECK_SCENARIO = TestScenario(
+    name="hardware_check",
+    description="检测Ferrum硬件连接状态",
+    steps=[
+        TestStep(
+            step_id="hw_01",
+            instruction="检查Ferrum设备是否已连接",
+            expected_result="设备连接成功，串口COM2可用",
+            can_skip=False
+        ),
+        TestStep(
+            step_id="hw_02",
+            instruction="验证设备响应",
+            expected_result="设备响应正常，可以执行测试",
+            can_skip=False
+        ),
+    ]
+)
+
+
+# =============================================================================
 # Guild Donation Workflow Scenario
 # =============================================================================
 
@@ -123,6 +147,7 @@ CHARACTER_DETECTION_SCENARIO = TestScenario(
 # =============================================================================
 
 ALL_SCENARIOS: List[TestScenario] = [
+    HARDWARE_CHECK_SCENARIO,  # 第一个场景：硬件检测
     GUILD_DONATION_SCENARIO,
     CHARACTER_DETECTION_SCENARIO,
 ]
