@@ -9,10 +9,11 @@ Exports:
     ConditionEvaluator: Evaluates image conditions using vision engine
 """
 
+import os
 import time
 import random
 from typing import Optional, Any, Tuple
-from core.workflow_schema import WorkflowStep, ClickAction, WaitAction, PressAction, ScrollAction, WaitImageAction, ClickDetectedAction
+from core.workflow_schema import WorkflowStep, ClickAction, WaitAction, PressAction, ScrollAction, WaitImageAction, ClickDetectedAction, MoveAction, CaptureROIAction
 
 
 def calculate_safe_click_roi(roi: Tuple[int, int, int, int], shrink_percent: float = 0.10) -> Tuple[int, int, int, int]:
@@ -115,6 +116,10 @@ class ActionDispatcher:
                 self._dispatch_wait_image(action, step)
             elif isinstance(action, ClickDetectedAction):
                 self._dispatch_click_detected(action, step)
+            elif isinstance(action, MoveAction):
+                self._dispatch_move(action)
+            elif isinstance(action, CaptureROIAction):
+                self._dispatch_capture_roi(action)
             else:
                 raise ExecutionError(f"Unknown action type: {type(action)}")
         except Exception as e:
@@ -164,6 +169,87 @@ class ActionDispatcher:
     def _dispatch_press(self, action: PressAction) -> None:
         """Dispatch a key press action."""
         self.controller.press(action.key_name)
+
+    def _dispatch_move(self, action: MoveAction) -> None:
+        """Dispatch a move action to absolute coordinates without clicking."""
+        if hasattr(self.controller, 'move_absolute'):
+            self.controller.move_absolute(action.x, action.y)
+        else:
+            # Fallback: use relative move if absolute not available
+            # Get current position first (if available)
+            current_x, current_y = 0, 0
+            try:
+                import win32api
+                current_x, current_y = win32api.GetCursorPos()
+            except Exception:
+                pass
+            dx = action.x - current_x
+            dy = action.y - current_y
+            if hasattr(self.controller, 'move'):
+                self.controller.move(dx, dy)
+
+    def _dispatch_capture_roi(self, action: CaptureROIAction) -> None:
+        """
+        Dispatch a capture_roi action to extract and store ROI from screenshot.
+
+        Captures the specified ROI from the current screenshot and stores it
+        in the workflow context under the specified output_key. Optionally
+        saves the captured image to a file path.
+
+        Args:
+            action: CaptureROIAction with roi, output_key, and optional save_path
+        """
+        from core.workflow_executor import ExecutionError
+
+        # Capture screenshot
+        screenshot = self._capture_screenshot()
+
+        if screenshot is None or screenshot.size == 0:
+            raise ExecutionError("Failed to capture screenshot for ROI extraction")
+
+        # Extract ROI
+        x1, y1, x2, y2 = action.roi
+
+        # Validate bounds
+        height, width = screenshot.shape[:2]
+        x1 = max(0, min(x1, width))
+        x2 = max(0, min(x2, width))
+        y1 = max(0, min(y1, height))
+        y2 = max(0, min(y2, height))
+
+        if x1 >= x2 or y1 >= y2:
+            raise ExecutionError(f"Invalid ROI dimensions: ({x1}, {y1}, {x2}, {y2})")
+
+        # Extract region
+        roi_region = screenshot[y1:y2, x1:x2]
+
+        if roi_region.size == 0:
+            raise ExecutionError(f"Empty ROI region extracted from ({x1}, {y1}, {x2}, {y2})")
+
+        # Store in controller's workflow context if available
+        if hasattr(self.controller, 'workflow_context'):
+            self.controller.workflow_context[action.output_key] = roi_region
+            print(f"[Vision] Captured ROI stored in context['{action.output_key}']")
+        else:
+            # Fallback: store in dispatcher context
+            if not hasattr(self, '_capture_context'):
+                self._capture_context = {}
+            self._capture_context[action.output_key] = roi_region
+            print(f"[Vision] Captured ROI stored in dispatcher context['{action.output_key}']")
+
+        # Optionally save to file
+        if action.save_path:
+            try:
+                import cv2
+                # Ensure directory exists
+                save_dir = os.path.dirname(action.save_path)
+                if save_dir and not os.path.exists(save_dir):
+                    os.makedirs(save_dir, exist_ok=True)
+
+                cv2.imwrite(action.save_path, roi_region)
+                print(f"[Vision] ROI saved to: {action.save_path}")
+            except Exception as e:
+                print(f"[WARNING] Failed to save ROI to {action.save_path}: {e}")
 
     def _dispatch_scroll(self, action: ScrollAction) -> None:
         """Dispatch a scroll action."""
@@ -436,7 +522,10 @@ class ConditionEvaluator:
         condition_type = condition.get('type')
 
         if condition_type == 'image':
-            return self._evaluate_image_condition(condition, screenshot)
+            result = self._evaluate_image_condition(condition, screenshot)
+            template = condition.get('template', 'unknown')
+            print(f"[Condition] Image check '{template}': {'FOUND' if result else 'NOT FOUND'}")
+            return result
         else:
             # Unknown condition type - default to False
             return False

@@ -35,6 +35,13 @@ class ClickAction(BaseModel):
     )
 
 
+class MoveAction(BaseModel):
+    """Move mouse to absolute coordinates without clicking."""
+    type: Literal["move"]
+    x: int = Field(..., description="X coordinate (absolute)")
+    y: int = Field(..., description="Y coordinate (absolute)")
+
+
 class WaitAction(BaseModel):
     """Wait action with millisecond duration."""
     type: Literal["wait"]
@@ -150,8 +157,31 @@ class ClickDetectedAction(BaseModel):
     )
 
 
+class CaptureROIAction(BaseModel):
+    """
+    Capture ROI action for screenshot-based account indexing.
+
+    Extracts a region from the current screenshot and stores it in the
+    workflow context for later processing (e.g., perceptual hash comparison).
+    Optionally saves the captured image to a file path.
+    """
+    type: Literal["capture_roi"]
+    roi: Tuple[int, int, int, int] = Field(
+        ...,
+        description="Region of interest as (x1, y1, x2, y2) to capture"
+    )
+    output_key: str = Field(
+        ...,
+        description="Key to store captured image in workflow context"
+    )
+    save_path: Optional[str] = Field(
+        None,
+        description="Optional path to save captured screenshot"
+    )
+
+
 # Discriminated union for all action types
-ActionConfig = Union[ClickAction, WaitAction, PressAction, ScrollAction, WaitImageAction, ClickDetectedAction]
+ActionConfig = Union[ClickAction, ClickDetectedAction, CaptureROIAction, MoveAction, PressAction, ScrollAction, WaitAction, WaitImageAction]
 
 
 # =============================================================================
