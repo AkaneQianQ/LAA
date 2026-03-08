@@ -230,7 +230,8 @@ steps:
       key_name: esc
     next: workflow_complete
 
-  # Step 7: Workflow complete (fallback)
+  # Step 7: Workflow complete
+  # Final step after guild UI is confirmed closed
   - step_id: workflow_complete
     action:
       type: wait
