@@ -34,15 +34,16 @@ steps:
 
   # Step 2: Wait for guild menu to appear (intelligent wait)
   # Recovery: rollback to anchor if menu doesn't appear
+  # ROI: 546,803,903,835, 宽高(357,32) - 对比缓存 guild_ui.bmp
   - step_id: wait_menu_appear
     action:
       type: wait_image
       state: appear
-      image: guild_flag_mark.png
-      roi: [1000, 200, 1600, 400]
+      image: guild_ui.bmp
+      roi: [546, 803, 903, 835]
       timeout_ms: 5000
       poll_interval_ms: 100
-    next: click_donate_tab
+    next: check_first_confirm
     recovery:
       on_timeout: open_guild_menu
       max_escalations: 3
@@ -50,189 +51,136 @@ steps:
         phase: donation
         step_type: wait_menu
 
-  # Step 3: Click donation tab
-  - step_id: click_donate_tab
-    action:
-      type: click
-      x: 1200
-      y: 600
-    next: wait_donation_ui_appear
-
-  # Step 4: Wait for donation UI to appear
-  # Recovery: rollback to anchor if donation UI doesn't appear
-  - step_id: wait_donation_ui_appear
-    action:
-      type: wait_image
-      state: appear
-      image: btn_silver_donate.png
-      roi: [1100, 750, 1500, 850]
-      timeout_ms: 3000
-      poll_interval_ms: 100
-    next: click_silver_donate
-    recovery:
-      on_timeout: open_guild_menu
-      max_escalations: 3
-      audit_context:
-        phase: donation
-        step_type: wait_donation_ui
-
-  # Step 5: Click silver donation button
-  - step_id: click_silver_donate
-    action:
-      type: click
-      x: 1300
-      y: 800
-    next: wait_confirm_appear
-
-  # Step 6: Wait for confirmation dialog to appear
-  # Recovery: rollback to anchor if confirmation doesn't appear
-  - step_id: wait_confirm_appear
-    action:
-      type: wait_image
-      state: appear
-      image: daily_confirm_btn.png
-      roi: [1200, 850, 1500, 950]
-      timeout_ms: 3000
-      poll_interval_ms: 100
-    next: click_confirm
-    recovery:
-      on_timeout: open_guild_menu
-      max_escalations: 3
-      audit_context:
-        phase: donation
-        step_type: wait_confirm
-
-  # Step 7: Click confirm button
-  - step_id: click_confirm
-    action:
-      type: click
-      x: 1350
-      y: 900
-    next: wait_confirm_disappear
-
-  # Step 8: Wait for confirmation dialog to disappear (donation complete)
-  # Recovery: rollback to anchor if dialog doesn't disappear (stuck UI)
-  - step_id: wait_confirm_disappear
-    action:
-      type: wait_image
-      state: disappear
-      image: daily_confirm_btn.png
-      roi: [1200, 850, 1500, 950]
-      timeout_ms: 5000
-      poll_interval_ms: 100
-    next: close_menu
-    recovery:
-      on_timeout: open_guild_menu
-      max_escalations: 2
-      audit_context:
-        phase: donation
-        step_type: wait_confirm_close
-
-  # Step 9: Close guild menu with ESC
-  - step_id: close_menu
-    action:
-      type: press
-      key_name: esc
-    next: wait_menu_disappear
-
-  # Step 10: Wait for menu to disappear
-  - step_id: wait_menu_disappear
-    action:
-      type: wait_image
-      state: disappear
-      image: guild_flag_mark.png
-      roi: [1000, 200, 1600, 400]
-      timeout_ms: 3000
-      poll_interval_ms: 100
-    next: check_next_character
-
-  # Step 11: Check if there are more characters to process
-  - step_id: check_next_character
+  # Step 3: Check for first-time guild confirm popup
+  # ROI: 1229,657,1331,937, 宽高(102,280)
+  # If detected, handle it; if not, proceed to Stage 4
+  - step_id: check_first_confirm
     action:
       type: wait
       duration_ms: 100
-    on_true: scroll_to_next
-    on_false: workflow_complete
+    on_true: handle_first_confirm
+    on_false: stage4_first_donation
     condition:
       type: image
-      template: assets/btn_quick_switch.png
-      roi: [500, 850, 950, 1000]
+      template: assets/guild_first_confirm.bmp
+      roi: [1229, 657, 1331, 937]
       threshold: 0.8
 
-  # Step 12a: More characters, scroll to next
-  - step_id: scroll_to_next
+  # Step 3a: Handle first confirm popup (if detected)
+  # 在安全区域内随机点击（缩小10%避免边缘点击）
+  - step_id: handle_first_confirm
     action:
-      type: scroll
-      direction: down
-      ticks: 1
-    next: wait_scroll_complete
+      type: click_detected
+      image: assets/guild_first_confirm.bmp
+      roi: [1229, 657, 1331, 937]
+      threshold: 0.8
+      shrink_percent: 0.10
+    next: stage4_first_donation
 
-  # Step 12b: No more characters, workflow complete
+  # Step 4: Stage 4 - Guild donation workflow
+  # ROI: 1863,450,2019,483, 宽高(156,33)
+  # Detect guild_first_donation.bmp and click
+  # y_offset: 0.33 限制点击区域，跳过上三分之一不可点击区域
+  - step_id: stage4_first_donation
+    action:
+      type: click_detected
+      image: assets/guild_first_donation.bmp
+      roi: [1863, 450, 2019, 483]
+      threshold: 0.8
+      shrink_percent: 0.10
+      y_offset: 0.33
+    next: stage4_second_donation
+
+  # Step 4b: Second donation detection
+  # ROI: 954,702,1077,742, 宽高(123,40)
+  # Detect guild_first_donation2.bmp and click
+  - step_id: stage4_second_donation
+    action:
+      type: click_detected
+      image: assets/guild_first_donation2.bmp
+      roi: [954, 702, 1077, 742]
+      threshold: 0.8
+      shrink_percent: 0.10
+    next: check_sec_donation
+
+  # Step 5: Check for secondary donation (支援金捐献)
+  # ROI: 1551,606,1693,635, 宽高(142,29)
+  # If detected, proceed to click; if not, output "当日无支援" and exit
+  - step_id: check_sec_donation
+    action:
+      type: wait
+      duration_ms: 100
+    on_true: click_sec_donation1
+    on_false: no_support_today
+    condition:
+      type: image
+      template: assets/guild_sec_donation1.bmp
+      roi: [1551, 606, 1693, 635]
+      threshold: 0.8
+
+  # Step 5a: Click guild_sec_donation1 (if detected)
+  # y_offset: 0.5 限制点击区域，跳过上二分之一不可点击区域
+  - step_id: click_sec_donation1
+    action:
+      type: click_detected
+      image: assets/guild_sec_donation1.bmp
+      roi: [1551, 606, 1693, 635]
+      threshold: 0.8
+      shrink_percent: 0.10
+      y_offset: 0.5
+    next: wait_sec_donation2
+
+  # Step 5b: Wait for guild_sec_donation2 to appear (1s timeout, fast polling)
+  # ROI: 1010,602,1253,794, 宽高(243,192)
+  # Wait up to 1 second with 100ms poll interval
+  - step_id: wait_sec_donation2
+    action:
+      type: wait_image
+      state: appear
+      image: assets/guild_sec_donation2.bmp
+      roi: [1010, 602, 1253, 794]
+      timeout_ms: 1000
+      poll_interval_ms: 100
+      threshold: 0.7
+    next: click_sec_donation2
+
+  # Step 5c: Click detected guild_sec_donation2 at random position in ROI
+  - step_id: click_sec_donation2
+    action:
+      type: click_detected
+      image: assets/guild_sec_donation2.bmp
+      roi: [1010, 602, 1253, 794]
+      threshold: 0.7
+      shrink_percent: 0.10
+    next: click_sec_donation2_fixed
+
+  # Step 5d: Click at fixed position (1229, 937) with Y +/- 5px random
+  # Hardcoded coordinates with small vertical randomization
+  - step_id: click_sec_donation2_fixed
+    action:
+      type: click
+      x: 1229
+      y: 937
+      random_y: 5
+    next: donation_complete
+
+  # Step 5d: No support today - press ESC and exit
+  - step_id: no_support_today
+    action:
+      type: press
+      key_name: esc
+    next: null
+
+  # Step 6: Donation complete
+  - step_id: donation_complete
+    action:
+      type: wait
+      duration_ms: 100
+    next: write_donation_cache
+
+  # Step 7: Workflow complete (fallback)
   - step_id: workflow_complete
     action:
       type: wait
       duration_ms: 100
     next: null
-
-  # Step 13: Wait after scroll using intelligent wait for UI stability
-  - step_id: wait_scroll_complete
-    action:
-      type: wait_image
-      state: appear
-      image: btn_quick_switch.png
-      roi: [500, 850, 950, 1000]
-      timeout_ms: 2000
-      poll_interval_ms: 100
-    next: click_next_character
-
-  # Step 14: Click next character slot
-  - step_id: click_next_character
-    action:
-      type: click
-      x: 1100
-      y: 650
-    next: wait_character_select_appear
-
-  # Step 15: Wait for character selection screen
-  # Recovery: rollback to anchor if character select doesn't appear
-  - step_id: wait_character_select_appear
-    action:
-      type: wait_image
-      state: appear
-      image: btn_login_yellow.png
-      roi: [1200, 880, 1700, 960]
-      timeout_ms: 5000
-      poll_interval_ms: 100
-    next: click_login
-    recovery:
-      on_timeout: open_guild_menu
-      max_escalations: 3
-      audit_context:
-        phase: character_switch
-        step_type: wait_character_select
-
-  # Step 16: Click login button
-  - step_id: click_login
-    action:
-      type: click
-      x: 1450
-      y: 920
-    next: wait_login_complete
-
-  # Step 17: Wait for login to complete (character switch)
-  # Recovery: rollback to anchor if login doesn't complete
-  - step_id: wait_login_complete
-    action:
-      type: wait_image
-      state: disappear
-      image: btn_login_yellow.png
-      roi: [1200, 880, 1700, 960]
-      timeout_ms: 10000
-      poll_interval_ms: 200
-    next: open_guild_menu
-    recovery:
-      on_timeout: open_guild_menu
-      max_escalations: 2
-      audit_context:
-        phase: character_switch
-        step_type: wait_login_complete
