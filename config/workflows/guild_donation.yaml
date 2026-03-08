@@ -187,6 +187,13 @@ steps:
       duration_ms: 50
     next: press_esc_close
 
+  # Step 6b: Press ESC to close guild menu
+  - step_id: press_esc_close
+    action:
+      type: press
+      key_name: esc
+    next: wait_guild_ui_close
+
   # Step 7: Workflow complete (fallback)
   - step_id: workflow_complete
     action:
