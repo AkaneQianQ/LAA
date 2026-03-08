@@ -346,3 +346,43 @@ class AccountManager:
         from core.database import find_account_by_hash
         main_db = self._get_main_db_path()
         return find_account_by_hash(main_db, account_hash)
+
+    def capture_pending_first_slot(self, screenshot: np.ndarray) -> Optional[str]:
+        """
+        捕获待处理的首角色截图。
+
+        在切换到第二个角色前调用此方法，捕获首个角色格的干净截图。
+        这是延迟首角色截图机制的一部分，用于避免UI选中状态导致的颜色变化。
+
+        Args:
+            screenshot: 全屏截图
+
+        Returns:
+            截图保存路径，如果没有待捕获的首角色则返回None
+        """
+        if self.detector is None:
+            return None
+
+        # 检查是否有待捕获的首角色
+        if hasattr(self.detector, 'is_first_slot_capture_pending') and \
+           self.detector.is_first_slot_capture_pending():
+            # 调用detector的延迟截图方法
+            if hasattr(self.detector, 'capture_first_slot_on_switch'):
+                return self.detector.capture_first_slot_on_switch(screenshot)
+
+        return None
+
+    def is_first_slot_capture_pending(self) -> bool:
+        """
+        检查是否有待捕获的首角色截图。
+
+        Returns:
+            如果有待捕获的首角色返回True，否则返回False
+        """
+        if self.detector is None:
+            return False
+
+        if hasattr(self.detector, 'is_first_slot_capture_pending'):
+            return self.detector.is_first_slot_capture_pending()
+
+        return False

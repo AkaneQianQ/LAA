@@ -835,6 +835,76 @@ class CharacterDetector:
         finally:
             conn.close()
 
+    def capture_first_slot_on_switch(self, screenshot: np.ndarray) -> Optional[str]:
+        """
+        在切换到第二个角色前捕获首个角色格的截图。
+
+        当首次进入角色选择界面时，首个角色格（slot_index=0）处于选中状态，
+        UI会显示选中效果导致颜色变化。此方法在切换到第二个角色前调用，
+        此时第一个角色不再是选中状态，可以获取干净的截图。
+
+        Args:
+            screenshot: 全屏截图
+
+        Returns:
+            截图保存路径，如果没有待捕获的首角色则返回None
+        """
+        from core.database import upsert_character
+
+        if not self._pending_first_slot_capture or self._pending_account_hash is None:
+            return None
+
+        # 移动鼠标到安全位置
+        self._move_mouse_to_safe_position()
+
+        # 获取首个角色格的ROI
+        roi = get_slot_roi(0)
+        x1, y1, x2, y2 = roi
+
+        # 截取首个角色格
+        slot_screenshot = screenshot[y1:y2, x1:x2]
+
+        # 确保目录存在
+        account_dir = self._ensure_account_directory(self._pending_account_hash)
+        chars_dir = os.path.join(account_dir, "characters")
+        os.makedirs(chars_dir, exist_ok=True)
+
+        # 保存截图
+        screenshot_path = os.path.join(chars_dir, "0.png")
+        cv2.imwrite(screenshot_path, slot_screenshot)
+
+        # 获取account_id
+        import sqlite3
+        conn = sqlite3.connect(self.db_path, timeout=5.0)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id FROM accounts WHERE account_hash = ?",
+                (self._pending_account_hash,)
+            )
+            row = cursor.fetchone()
+            if row:
+                account_id = row[0]
+                # 更新数据库
+                upsert_character(self.db_path, account_id, 0, screenshot_path)
+        finally:
+            conn.close()
+
+        # 重置待捕获状态
+        self._pending_first_slot_capture = False
+        self._pending_account_hash = None
+
+        return screenshot_path
+
+    def is_first_slot_capture_pending(self) -> bool:
+        """
+        检查是否有待捕获的首角色截图。
+
+        Returns:
+            如果有待捕获的首角色返回True，否则返回False
+        """
+        return self._pending_first_slot_capture
+
     def cache_character_screenshot(self, account_id: int, slot_index: int,
                                     screenshot: np.ndarray,
                                     roi: Optional[Tuple[int, int, int, int]] = None) -> str:
