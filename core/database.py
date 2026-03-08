@@ -25,6 +25,7 @@ CREATE_ACCOUNTS_TABLE = """
 CREATE TABLE IF NOT EXISTS accounts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     account_hash TEXT UNIQUE NOT NULL,
+    tag_screenshot_path TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 """
@@ -157,14 +158,14 @@ def find_account_by_hash(db_path: str, account_hash: str) -> Optional[Dict[str, 
         account_hash: The account hash to search for
 
     Returns:
-        Account dictionary with id, account_hash, created_at, or None if not found
+        Account dictionary with id, account_hash, tag_screenshot_path, created_at, or None if not found
     """
     conn = sqlite3.connect(db_path, timeout=5.0)
     conn.row_factory = sqlite3.Row
     try:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT id, account_hash, created_at FROM accounts WHERE account_hash = ?",
+            "SELECT id, account_hash, tag_screenshot_path, created_at FROM accounts WHERE account_hash = ?",
             (account_hash,)
         )
         row = cursor.fetchone()
@@ -175,6 +176,7 @@ def find_account_by_hash(db_path: str, account_hash: str) -> Optional[Dict[str, 
         return {
             'id': row['id'],
             'account_hash': row['account_hash'],
+            'tag_screenshot_path': row['tag_screenshot_path'],
             'created_at': row['created_at'],
         }
     finally:
@@ -198,6 +200,59 @@ def get_or_create_account(db_path: str, account_hash: str) -> int:
     return create_account(db_path, account_hash)
 
 
+def update_account_tag(db_path: str, account_id: int, tag_screenshot_path: str) -> bool:
+    """
+    Update account tag screenshot path.
+
+    Args:
+        db_path: Path to the SQLite database file
+        account_id: The account ID to update
+        tag_screenshot_path: Path to the tag screenshot
+
+    Returns:
+        True if successful, False otherwise
+    """
+    conn = sqlite3.connect(db_path, timeout=5.0)
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE accounts SET tag_screenshot_path = ? WHERE id = ?",
+            (tag_screenshot_path, account_id)
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    except sqlite3.Error:
+        return False
+    finally:
+        conn.close()
+
+
+def get_account_tag_path(db_path: str, account_id: int) -> Optional[str]:
+    """
+    Get account tag screenshot path.
+
+    Args:
+        db_path: Path to the SQLite database file
+        account_id: The account ID
+
+    Returns:
+        Path to tag screenshot or None if not found
+    """
+    conn = sqlite3.connect(db_path, timeout=5.0)
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT tag_screenshot_path FROM accounts WHERE id = ?",
+            (account_id,)
+        )
+        row = cursor.fetchone()
+        return row[0] if row else None
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+
+
 def list_all_accounts(db_path: str) -> List[Dict[str, Any]]:
     """
     List all accounts in the database.
@@ -212,13 +267,14 @@ def list_all_accounts(db_path: str) -> List[Dict[str, Any]]:
     conn.row_factory = sqlite3.Row
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT id, account_hash, created_at FROM accounts ORDER BY created_at")
+        cursor.execute("SELECT id, account_hash, tag_screenshot_path, created_at FROM accounts ORDER BY created_at")
         rows = cursor.fetchall()
 
         return [
             {
                 'id': row['id'],
                 'account_hash': row['account_hash'],
+                'tag_screenshot_path': row['tag_screenshot_path'],
                 'created_at': row['created_at'],
             }
             for row in rows

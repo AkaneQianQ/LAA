@@ -139,7 +139,7 @@ class CharacterDetector:
 
     def __init__(self, assets_path: str = "assets", data_dir: str = "data",
                  db_path: str = "data/accounts.db", use_parallel: bool = False,
-                 parallel_workers: int = 4):
+                 parallel_workers: int = 4, hardware_gateway=None):
         """
         Initialize the detector with path to template assets.
 
@@ -149,12 +149,16 @@ class CharacterDetector:
             db_path: Path to SQLite database file
             use_parallel: Whether to enable parallel scanning by default
             parallel_workers: Number of worker threads for parallel matching
+            hardware_gateway: Optional HardwareInputGateway for mouse movement
         """
         self.assets_path: str = assets_path
         self.data_dir: str = data_dir
         self.db_path: str = db_path
+        self._hardware_gateway = hardware_gateway
         self._template_cache: Dict[str, np.ndarray] = {}
         self._parallel_matcher: Optional[ParallelMatcher] = None
+        self._pending_first_slot_capture: bool = False
+        self._pending_account_hash: Optional[str] = None
         if use_parallel:
             self._parallel_matcher = ParallelMatcher(max_workers=parallel_workers)
 
@@ -643,25 +647,112 @@ class CharacterDetector:
             account_hash: The account hash identifier
 
         Returns:
-            Path to the characters directory
+            Path to the account directory
         """
         account_dir = os.path.join(self.data_dir, "accounts", account_hash)
         chars_dir = os.path.join(account_dir, "characters")
 
         os.makedirs(chars_dir, exist_ok=True)
 
-        return chars_dir
+        return account_dir
+
+    def _move_mouse_to_safe_position(self) -> None:
+        """
+        移动鼠标到安全位置，防止UI变色。
+
+        将鼠标移动到MOUSE_SAFE_POSITION位置，避免鼠标悬停在角色格上
+        导致UI颜色变化影响截图识别。
+        """
+        if self._hardware_gateway is not None:
+            try:
+                self._hardware_gateway.move_mouse(MOUSE_SAFE_POSITION[0], MOUSE_SAFE_POSITION[1])
+            except Exception:
+                # 鼠标移动失败不影响后续流程
+                pass
+
+    def _capture_account_tag(self, screenshot: np.ndarray) -> np.ndarray:
+        """
+        截取账号标签区域。
+
+        Args:
+            screenshot: 全屏截图
+
+        Returns:
+            账号标签区域的截图
+        """
+        x1, y1, x2, y2 = ACCOUNT_TAG_ROI
+        return screenshot[y1:y2, x1:x2]
+
+    def _compute_screenshot_hash(self, screenshot: np.ndarray) -> str:
+        """
+        Compute SHA-256 hash of screenshot bytes for account identity.
+
+        Args:
+            screenshot: Screenshot as numpy array
+
+        Returns:
+            Hexadecimal hash string (64 characters)
+        """
+        # Convert to bytes and compute hash
+        screenshot_bytes = screenshot.tobytes()
+        return hashlib.sha256(screenshot_bytes).hexdigest()
+
+    def match_account_tag(self, screenshot: np.ndarray, account_hash: str) -> bool:
+        """
+        对比截图中的账号标签与库中存储的标签是否匹配。
+
+        Args:
+            screenshot: 全屏截图
+            account_hash: 要匹配的账号hash
+
+        Returns:
+            如果匹配返回True，否则返回False
+        """
+        import sqlite3
+
+        # 截取当前账号标签
+        current_tag = self._capture_account_tag(screenshot)
+        current_hash = self._compute_screenshot_hash(current_tag)
+
+        # 获取库中存储的标签路径
+        conn = sqlite3.connect(self.db_path, timeout=5.0)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT tag_screenshot_path FROM accounts WHERE account_hash = ?",
+                (account_hash,)
+            )
+            row = cursor.fetchone()
+
+            if row is None or row[0] is None:
+                return False
+
+            tag_path = row[0]
+            if not os.path.exists(tag_path):
+                return False
+
+            # 读取存储的标签并计算hash
+            stored_tag = cv2.imread(tag_path, cv2.IMREAD_COLOR)
+            if stored_tag is None:
+                return False
+
+            stored_hash = self._compute_screenshot_hash(stored_tag)
+
+            return current_hash == stored_hash
+        finally:
+            conn.close()
 
     def create_or_get_account_index(self, screenshot: np.ndarray) -> Tuple[int, str]:
         """
-        Create or retrieve account index based on first character screenshot.
+        Create or retrieve account index based on account tag ROI.
 
         This method implements the first-run index capture flow:
-        1. Scan slots to find first occupied slot
-        2. Extract screenshot of first character
+        1. Move mouse to safe position to prevent UI color change
+        2. Extract account tag screenshot from ACCOUNT_TAG_ROI
         3. Compute hash for account identity
         4. Create account in database if new
-        5. Save all character screenshots to cache
+        5. Save account tag screenshot to cache
+        6. Save all character screenshots to cache (except slot 0 if pending)
 
         Args:
             screenshot: Full screen capture as BGR numpy array
@@ -674,41 +765,75 @@ class CharacterDetector:
         # Ensure database is initialized
         init_database(self.db_path)
 
+        # Step 1: Move mouse to safe position to prevent UI color change
+        self._move_mouse_to_safe_position()
+
+        # Step 2: Extract account tag screenshot
+        tag_screenshot = self._capture_account_tag(screenshot)
+
+        # Step 3: Compute hash from account tag for account identity
+        account_hash = self._compute_screenshot_hash(tag_screenshot)
+
+        # Step 4: Create or get account
+        account_id = get_or_create_account(self.db_path, account_hash)
+
+        # Step 5: Ensure directory structure exists and save account tag
+        account_dir = self._ensure_account_directory(account_hash)
+        tag_path = os.path.join(account_dir, "tag.png")
+        cv2.imwrite(tag_path, tag_screenshot)
+
+        # Update database with tag screenshot path
+        self._update_account_tag_path(account_id, tag_path)
+
         # Scan slots to find occupied ones
         slot_results = self.scan_visible_slots(screenshot)
         occupied_slots = [r for r in slot_results if r.has_character]
 
         if not occupied_slots:
-            # No characters found - return None
-            return None, None
+            return account_id, account_hash
 
-        # Get first occupied slot for account identity
-        first_slot = occupied_slots[0]
-        slot_index = first_slot.slot_index
-        x1, y1, x2, y2 = first_slot.roi
+        # Step 6: Save character screenshots
+        chars_dir = os.path.join(account_dir, "characters")
+        os.makedirs(chars_dir, exist_ok=True)
 
-        # Extract character screenshot
-        char_screenshot = screenshot[y1:y2, x1:x2]
-
-        # Compute hash from character screenshot for account identity
-        account_hash = self._compute_screenshot_hash(char_screenshot)
-
-        # Create or get account
-        account_id = get_or_create_account(self.db_path, account_hash)
-
-        # Ensure directory structure exists
-        chars_dir = self._ensure_account_directory(account_hash)
-
-        # Save all occupied slot screenshots to cache
+        # For slot 0, mark as pending capture (will capture when switching to second character)
+        # For other slots, capture immediately
         for slot in occupied_slots:
-            sx1, sy1, sx2, sy2 = slot.roi
-            slot_screenshot = screenshot[sy1:sy2, sx1:sx2]
-            screenshot_path = os.path.join(chars_dir, f"{slot.slot_index}.png")
-            cv2.imwrite(screenshot_path, slot_screenshot)
-            # Update database with character metadata
-            upsert_character(self.db_path, account_id, slot.slot_index, screenshot_path)
+            if slot.slot_index == 0:
+                # Mark first slot as pending capture
+                self._pending_first_slot_capture = True
+                self._pending_account_hash = account_hash
+            else:
+                # Capture non-first slots immediately
+                sx1, sy1, sx2, sy2 = slot.roi
+                slot_screenshot = screenshot[sy1:sy2, sx1:sx2]
+                screenshot_path = os.path.join(chars_dir, f"{slot.slot_index}.png")
+                cv2.imwrite(screenshot_path, slot_screenshot)
+                # Update database with character metadata
+                upsert_character(self.db_path, account_id, slot.slot_index, screenshot_path)
 
         return account_id, account_hash
+
+    def _update_account_tag_path(self, account_id: int, tag_path: str) -> None:
+        """
+        Update account tag screenshot path in database.
+
+        Args:
+            account_id: The account ID
+            tag_path: Path to the tag screenshot
+        """
+        import sqlite3
+
+        conn = sqlite3.connect(self.db_path, timeout=5.0)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE accounts SET tag_screenshot_path = ? WHERE id = ?",
+                (tag_path, account_id)
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
     def cache_character_screenshot(self, account_id: int, slot_index: int,
                                     screenshot: np.ndarray,
