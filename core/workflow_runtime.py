@@ -10,8 +10,64 @@ Exports:
 """
 
 import time
+import random
 from typing import Optional, Any, Tuple
-from core.workflow_schema import WorkflowStep, ClickAction, WaitAction, PressAction, ScrollAction, WaitImageAction
+from core.workflow_schema import WorkflowStep, ClickAction, WaitAction, PressAction, ScrollAction, WaitImageAction, ClickDetectedAction
+
+
+def calculate_safe_click_roi(roi: Tuple[int, int, int, int], shrink_percent: float = 0.10) -> Tuple[int, int, int, int]:
+    """
+    计算安全点击区域，缩小ROI避免点击边缘。
+
+    Args:
+        roi: 原始ROI区域 (x1, y1, x2, y2)
+        shrink_percent: 缩小比例，默认10%
+
+    Returns:
+        缩小后的安全区域 (safe_x1, safe_y1, safe_x2, safe_y2)
+    """
+    x1, y1, x2, y2 = roi
+    width = x2 - x1
+    height = y2 - y1
+
+    # 计算缩小量（至少保留一定边距）
+    shrink_x = max(int(width * shrink_percent), 5)
+    shrink_y = max(int(height * shrink_percent), 5)
+
+    # 计算安全区域（确保不会超出原始ROI）
+    safe_x1 = x1 + shrink_x
+    safe_y1 = y1 + shrink_y
+    safe_x2 = x2 - shrink_x
+    safe_y2 = y2 - shrink_y
+
+    # 确保区域有效
+    if safe_x1 >= safe_x2:
+        safe_x1 = x1 + 2
+        safe_x2 = x2 - 2
+    if safe_y1 >= safe_y2:
+        safe_y1 = y1 + 2
+        safe_y2 = y2 - 2
+
+    return (safe_x1, safe_y1, safe_x2, safe_y2)
+
+
+def get_random_click_position(roi: Tuple[int, int, int, int], shrink_percent: float = 0.10) -> Tuple[int, int]:
+    """
+    在ROI安全区域内生成随机点击坐标。
+
+    Args:
+        roi: ROI区域 (x1, y1, x2, y2)
+        shrink_percent: 缩小比例，默认10%
+
+    Returns:
+        随机点击坐标 (x, y)
+    """
+    safe_x1, safe_y1, safe_x2, safe_y2 = calculate_safe_click_roi(roi, shrink_percent)
+
+    x = random.randint(safe_x1, safe_x2)
+    y = random.randint(safe_y1, safe_y2)
+
+    return (x, y)
 
 
 class ActionDispatcher:
@@ -57,6 +113,8 @@ class ActionDispatcher:
                 self._dispatch_scroll(action)
             elif isinstance(action, WaitImageAction):
                 self._dispatch_wait_image(action, step)
+            elif isinstance(action, ClickDetectedAction):
+                self._dispatch_click_detected(action, step)
             else:
                 raise ExecutionError(f"Unknown action type: {type(action)}")
         except Exception as e:
@@ -66,6 +124,8 @@ class ActionDispatcher:
 
     def _dispatch_click(self, action: ClickAction) -> None:
         """Dispatch a click action with coordinate normalization."""
+        import random
+
         # Calculate absolute coordinates
         if action.roi is not None:
             # ROI-relative coordinates: add ROI origin
@@ -77,7 +137,25 @@ class ActionDispatcher:
             abs_x = action.x
             abs_y = action.y
 
-        self.controller.click(abs_x, abs_y)
+        # Apply random Y offset if specified
+        random_y = getattr(action, 'random_y', 0)
+        if random_y > 0:
+            abs_y += random.randint(-random_y, random_y)
+
+        print(f"[5D Debug] 点击坐标: ({abs_x}, {abs_y}), random_y={random_y}")
+
+        # Use move_and_click for absolute coordinates (consistent with click_detected)
+        if hasattr(self.controller, 'move_and_click'):
+            print(f"[5D Debug] 调用 move_and_click({abs_x}, {abs_y})")
+            self.controller.move_and_click(abs_x, abs_y)
+            print(f"[5D Debug] 点击完成，等待 100ms 让 UI 响应...")
+            time.sleep(0.1)
+        else:
+            # Fallback: move then click separately
+            print(f"[5D Debug] 回退到 move_absolute + click")
+            self.controller.move_absolute(abs_x, abs_y)
+            self.controller._send_command("km.click(0)")  # 0 = left button
+            time.sleep(0.1)
 
     def _dispatch_wait(self, action: WaitAction) -> None:
         """Dispatch a wait action (convert ms to seconds)."""
@@ -118,13 +196,16 @@ class ActionDispatcher:
         # Calculate deadline using monotonic clock
         deadline = time.monotonic() + timeout_sec
 
-        # Stability tracking: need 2 consecutive hits for success
+        # Stability tracking: configurable consecutive hits for success
         consecutive_hits = 0
-        required_hits = 2
+        required_hits = getattr(action, 'stability_hits', 1)
+
+        # Get threshold from action (default 0.8)
+        threshold = getattr(action, 'threshold', 0.8)
 
         while time.monotonic() < deadline:
-            # Check current image state
-            is_present = self._check_image_present(action.image, action.roi)
+            # Check current image state with custom threshold
+            is_present = self._check_image_present(action.image, action.roi, threshold)
 
             if action.state == 'appear':
                 # For appear: success when image is present
@@ -151,6 +232,88 @@ class ActionDispatcher:
             f"wait_image timeout: image '{action.image}' did not {action.state} "
             f"within {timeout_ms}ms (required {required_hits} consecutive hits)"
         )
+
+    def _dispatch_click_detected(self, action: ClickDetectedAction, step: WorkflowStep) -> None:
+        """
+        Dispatch a click_detected action at detected image center with random offset.
+
+        Performs single-shot detection and clicks the center of matched region
+        with configurable random offset for anti-detection purposes.
+
+        Args:
+            action: ClickDetectedAction with image, roi, threshold, random_offset
+            step: Workflow step for context
+
+        Raises:
+            ExecutionError: If image not found or click fails
+        """
+        from core.workflow_executor import ExecutionError
+
+        if self.vision is None:
+            raise ExecutionError("Cannot click_detected: no vision engine available")
+
+        try:
+            # Capture screenshot
+            screenshot = self._capture_screenshot()
+
+            # Find element
+            found, confidence, location = self.vision.find_element(
+                screenshot,
+                action.image,
+                roi=action.roi,
+                threshold=action.threshold
+            )
+
+            if not found:
+                raise ExecutionError(
+                    f"click_detected failed: '{action.image}' not found in ROI {action.roi} "
+                    f"(confidence: {confidence:.2f})"
+                )
+
+            # 使用检测到的匹配位置作为ROI，在安全区域内随机点击
+            # 这样不需要读取模板文件，且兼容性更好
+            match_x, match_y = location
+
+            # 构建匹配区域的ROI（以匹配位置为起点，假设一个合理的大小）
+            # 如果检测成功，使用匹配位置周围的小区域作为点击范围
+            import cv2
+            import os
+            template_path = action.image
+            if not os.path.isabs(template_path) and not template_path.startswith("assets/") and not template_path.startswith("assets\\"):
+                template_path = os.path.join("assets", template_path)
+            template = cv2.imread(template_path, cv2.IMREAD_GRAYSCALE)
+
+            if template is not None:
+                h, w = template.shape
+                # 点击模板中心点，而不是随机位置
+                center_x = match_x + w // 2
+                center_y = match_y + h // 2
+                final_x, final_y = center_x, center_y
+            else:
+                # 如果无法读取模板，使用传入的ROI中心
+                x1, y1, x2, y2 = action.roi
+                final_x = (x1 + x2) // 2
+                final_y = (y1 + y2) // 2
+
+            print(f"[5C Debug] 检测位置: ({match_x}, {match_y}), 模板尺寸: {w}x{h}, 中心点击: ({final_x}, {final_y})")
+
+            # 执行点击：使用优化的 move_and_click 减少串口往返延迟
+            if hasattr(self.controller, 'move_and_click'):
+                print(f"[5C Debug] 调用 move_and_click({final_x}, {final_y})")
+                self.controller.move_and_click(final_x, final_y)
+                print(f"[5C Debug] 点击完成，等待 100ms 让 UI 响应...")
+                time.sleep(0.1)  # 添加延迟让 UI 响应
+            else:
+                # 回退到旧方法
+                print(f"[5C Debug] 回退到 move_absolute + click")
+                self.controller.move_absolute(final_x, final_y)
+                self.controller._send_command("km.click(0)")  # 0 = 左键
+                time.sleep(0.1)
+
+        except Exception as e:
+            if isinstance(e, ExecutionError):
+                raise
+            raise ExecutionError(f"click_detected failed: {e}") from e
 
     def _resolve_timeout_ms(self, action: WaitImageAction, step: WorkflowStep) -> int:
         """Resolve timeout with action > workflow priority."""
@@ -180,13 +343,15 @@ class ActionDispatcher:
         # Fallback default
         return 50  # 50ms
 
-    def _check_image_present(self, image: str, roi: Tuple[int, int, int, int]) -> bool:
+    def _check_image_present(self, image: str, roi: Tuple[int, int, int, int], threshold: float = 0.8, debug: bool = False) -> bool:
         """
         Check if an image is present in the specified ROI.
 
         Args:
             image: Template image filename
             roi: Region of interest as (x1, y1, x2, y2)
+            threshold: Matching confidence threshold (default 0.8)
+            debug: Save ROI screenshot for debugging (default False)
 
         Returns:
             True if image is found, False otherwise
@@ -200,9 +365,10 @@ class ActionDispatcher:
             screenshot = self._capture_screenshot()
 
             # Use vision engine to find element
-            found, _, _ = self.vision.find_element(screenshot, image, roi=roi)
+            found, confidence, _ = self.vision.find_element(screenshot, image, roi=roi, threshold=threshold)
+
             return found
-        except Exception:
+        except Exception as e:
             return False
 
     def _capture_screenshot(self) -> Any:

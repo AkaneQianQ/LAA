@@ -204,6 +204,7 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 |---|-------------|------|--------|-----------|
 | 1 | 添加Ferrum硬件连接预检测试，确保所有测试前硬件连接正常 | 2026-03-07 | fc0fd75 | [1-ferrum](./quick/1-ferrum/) |
 | 2 | 修改账号TAG ROI和截图逻辑：新ROI(666,793,772,902)，防UI变色鼠标移动，延迟首角色截图 | 2026-03-08 | 4d067c8 | [2-tag-roi](./quick/2-tag-roi-roi-666-793-772-902-ui/) |
+| 3 | 添加公会捐献完成后的缓存记录和ESC退出检测流程 | 2026-03-08 | 624aa0b | [3-esc](./quick/3-esc/) |
 
 ## Accumulated Context
 
@@ -216,4 +217,4 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 
 ---
 
-*State updated: 2026-03-08 after completing quick task 1: 添加Ferrum硬件连接预检测试，确保所有测试前硬件连接正常*
+*State updated: 2026-03-08 after completing quick task 3: 添加公会捐献完成后的缓存记录和ESC退出检测流程*

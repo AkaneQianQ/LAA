@@ -30,17 +30,17 @@ class TestOverlay:
     """
 
     # UI Constants
-    WIDTH = 900
-    HEIGHT = 60
-    TITLE_BAR_HEIGHT = 20
-    CONTENT_HEIGHT = 40
+    WIDTH = 1100
+    HEIGHT = 75
+    TITLE_BAR_HEIGHT = 22
+    CONTENT_HEIGHT = 53
     DEFAULT_X = 0
     DEFAULT_Y = 0
 
-    # Colors - Using magenta as transparent key (unlikely to conflict)
-    TRANSPARENT_COLOR = "#ff00ff"
-    BG_COLOR = TRANSPARENT_COLOR  # Fully transparent background
-    TITLE_BG_COLOR = "#1e1e1e"  # Semi-transparent title bar
+    # Colors - Using alpha blending instead of transparent color to avoid text shadow issues
+    TRANSPARENT_COLOR = "#000000"
+    BG_COLOR = "#1a1a1a"  # Dark gray background (will use alpha for transparency)
+    TITLE_BG_COLOR = "#2d2d2d"  # Slightly lighter title bar
     TEXT_COLOR = "#ffffff"
     SUBTLE_TEXT_COLOR = "#cccccc"
     CLOSE_BUTTON_COLOR = "#ff5f56"
@@ -87,8 +87,9 @@ class TestOverlay:
         # Always on top
         self._window.wm_attributes('-topmost', True)
 
-        # Set transparent color for full transparency except text
-        self._window.wm_attributes('-transparentcolor', self.TRANSPARENT_COLOR)
+        # Use alpha blending for semi-transparent effect instead of transparentcolor
+        # This avoids text shadow artifacts (purple/white ghosting)
+        self._window.wm_attributes('-alpha', 0.92)
 
         # Prevent resizing
         self._window.resizable(False, False)
@@ -171,7 +172,7 @@ class TestOverlay:
             fg=self.SUBTLE_TEXT_COLOR,
             font=("Microsoft YaHei", 10)
         )
-        self._status_label.pack(side=tk.LEFT, padx=(10, 5), pady=8)
+        self._status_label.pack(side=tk.LEFT, padx=(10, 5), pady=5)
 
         # Instruction text in the middle (expandable)
         self._instruction_label = tk.Label(
@@ -180,21 +181,37 @@ class TestOverlay:
             bg=self.BG_COLOR,
             fg=self.TEXT_COLOR,
             font=("Microsoft YaHei", 11),
-            wraplength=self.WIDTH - 300,  # Leave room for status and hotkeys
-            justify=tk.LEFT
+            wraplength=self.WIDTH - 200,  # Allow more space for text
+            justify=tk.LEFT,
+            anchor=tk.W
         )
-        self._instruction_label.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, pady=8)
+        self._instruction_label.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, pady=5, padx=5)
 
-        # Hotkey indicators on the right
-        hotkey_text = "F1:下一步 | END:终止 | Y:通过 | N:失败"
-        self._hotkey_label = tk.Label(
-            self._content_frame,
-            text=hotkey_text,
+        # Hotkey indicators on the right (compact layout)
+        hotkey_frame = tk.Frame(self._content_frame, bg=self.BG_COLOR)
+        hotkey_frame.pack(side=tk.RIGHT, padx=(5, 10), pady=5)
+
+        # First row of hotkeys
+        hotkey_text1 = "F1:下一步 | END:终止"
+        self._hotkey_label1 = tk.Label(
+            hotkey_frame,
+            text=hotkey_text1,
             bg=self.BG_COLOR,
             fg=self.SUBTLE_TEXT_COLOR,
             font=("Microsoft YaHei", 9)
         )
-        self._hotkey_label.pack(side=tk.RIGHT, padx=(5, 10), pady=8)
+        self._hotkey_label1.pack(anchor=tk.E)
+
+        # Second row of hotkeys
+        hotkey_text2 = "Y:通过 | N:失败"
+        self._hotkey_label2 = tk.Label(
+            hotkey_frame,
+            text=hotkey_text2,
+            bg=self.BG_COLOR,
+            fg=self.SUBTLE_TEXT_COLOR,
+            font=("Microsoft YaHei", 9)
+        )
+        self._hotkey_label2.pack(anchor=tk.E)
 
     def _setup_dragging(self) -> None:
         """Setup drag functionality for the title bar."""

@@ -1,6 +1,0 @@
-{"ts": "2026-03-07T15:37:37.411787Z", "type": "policy_violation", "action": "input_validation", "detail": {"violation_type": "software_input_requested", "action_count": 0, "violation_count": 1}, "session_seed": 12345}
-{"ts": "2026-03-07T15:37:51.445139Z", "type": "policy_violation", "action": "input_validation", "detail": {"violation_type": "software_input_requested", "action_count": 0, "violation_count": 1}, "session_seed": 12345}
-{"ts": "2026-03-07T15:38:46.369081Z", "type": "policy_violation", "action": "input_validation", "detail": {"violation_type": "software_input_requested", "action_count": 0, "violation_count": 1}, "session_seed": 12345}
-{"ts": "2026-03-07T15:40:15.978033Z", "type": "policy_violation", "action": "input_validation", "detail": {"violation_type": "software_input_requested", "action_count": 0, "violation_count": 1}, "session_seed": 12345}
-{"ts": "2026-03-07T15:41:00.490859Z", "type": "policy_violation", "action": "input_validation", "detail": {"violation_type": "software_input_requested", "action_count": 0, "violation_count": 1}, "session_seed": 12345}
-{"ts": "2026-03-07T15:42:20.452076Z", "type": "policy_violation", "action": "input_validation", "detail": {"violation_type": "software_input_requested", "action_count": 0, "violation_count": 1}, "session_seed": 12345}

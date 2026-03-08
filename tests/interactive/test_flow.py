@@ -10,6 +10,9 @@ from datetime import datetime
 from enum import Enum
 from typing import Callable, Dict, List, Optional, Any
 import logging
+import threading
+import time
+import tkinter as tk
 
 from tests.interactive.overlay import TestOverlay
 from tests.interactive.test_logger import TestLogger, StepResult
@@ -35,6 +38,8 @@ class TestStep:
     instruction: str  # What user should do/see
     expected_result: str  # What should happen
     can_skip: bool = True  # Whether user can skip this step
+    action: Optional[Callable[[], bool]] = None  # Optional action to execute when step starts
+    wait_seconds: int = 0  # Optional countdown before user can respond
 
 
 @dataclass
@@ -69,8 +74,16 @@ class TestFlow:
         self.test_id: Optional[str] = None
         self._current_feedback: Optional[str] = None
         self._hotkey_callbacks: Dict[str, Callable[[], None]] = {}
+        self._countdown_active = False
+        self._original_instruction = ""
 
         logger_module.debug("TestFlow initialized")
+
+    def _get_root(self) -> Optional[tk.Tk]:
+        """Get the Tk root from overlay."""
+        if hasattr(self.overlay, '_root'):
+            return self.overlay._root
+        return None
 
     def load_scenario(self, scenario: TestScenario) -> None:
         """
@@ -140,16 +153,74 @@ class TestFlow:
         self.current_step_index = index
         self.state = TestState.RUNNING
         self._current_feedback = None
+        self._countdown_active = False
 
         step = self.scenario.steps[index]
+
+        # 先显示步骤信息
         step_text = f"{step.instruction} | 预期: {step.expected_result}"
         if step.can_skip:
             step_text += " | Y:通过 N:失败 F1:跳过"
         else:
             step_text += " | Y:通过 N:失败"
 
+        self._original_instruction = step_text
         self.overlay.set_instruction(step_text, index + 1, len(self.scenario.steps))
         logger_module.debug(f"Started step {index + 1}: {step.step_id}")
+
+        # 处理倒计时等待
+        if step.wait_seconds > 0:
+            self._start_countdown(step.wait_seconds)
+
+        # 在后台线程执行 action，避免阻塞 UI
+        if step.action is not None:
+            def run_action():
+                try:
+                    action_result = step.action()
+                    if not action_result:
+                        logger_module.warning(f"Action returned False for step {step.step_id}")
+                except Exception as e:
+                    logger_module.error(f"Action failed for step {step.step_id}: {e}")
+
+            action_thread = threading.Thread(target=run_action, daemon=True)
+            action_thread.start()
+
+    def _start_countdown(self, seconds: int) -> None:
+        """Start a countdown timer that updates the UI."""
+        self._countdown_active = True
+        self._update_countdown(seconds, seconds)
+
+    def _update_countdown(self, remaining: int, total: int) -> None:
+        """Update the countdown display."""
+        if not self._countdown_active:
+            return
+
+        if remaining > 0:
+            # 更新 UI 显示倒计时
+            countdown_text = f"[{remaining}s] {self._original_instruction}"
+            self.overlay.set_instruction(
+                countdown_text,
+                self.current_step_index + 1,
+                len(self.scenario.steps)
+            )
+            print(f"[等待] 倒计时 {remaining} 秒...")
+
+            # 使用 after 在 1 秒后更新
+            root = self._get_root()
+            if root:
+                root.after(1000, lambda: self._update_countdown(remaining - 1, total))
+            else:
+                # 如果没有 root，使用线程延迟
+                threading.Timer(1.0, lambda: self._update_countdown(remaining - 1, total)).start()
+        else:
+            # 倒计时结束
+            self._countdown_active = False
+            self.overlay.set_instruction(
+                self._original_instruction,
+                self.current_step_index + 1,
+                len(self.scenario.steps)
+            )
+            print("[等待] 倒计时结束，可以继续")
 
     def record_feedback(self, feedback: str) -> None:
         """
@@ -158,7 +229,8 @@ class TestFlow:
         Args:
             feedback: "Y", "N", or "SKIP"
         """
-        if self.state != TestState.RUNNING:
+        # Allow feedback in RUNNING (first time) or WAITING_FOR_FEEDBACK (updating)
+        if self.state not in (TestState.RUNNING, TestState.WAITING_FOR_FEEDBACK):
             logger_module.warning(f"Cannot record feedback in state {self.state}")
             return
 
@@ -186,8 +258,12 @@ class TestFlow:
 
     def terminate(self) -> None:
         """End test early (called on END)."""
-        if self.test_id:
-            self.logger.end_test(self.test_id, "INCOMPLETE")
+        if self.test_id and self.state not in (TestState.COMPLETED, TestState.TERMINATED):
+            try:
+                self.logger.end_test(self.test_id, "INCOMPLETE")
+            except KeyError:
+                # Test may have already been ended or not fully started
+                pass
 
         self.state = TestState.TERMINATED
         self.overlay.set_instruction("测试已终止 | 按 END 关闭")

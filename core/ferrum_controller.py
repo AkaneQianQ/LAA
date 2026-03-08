@@ -136,7 +136,7 @@ class FerrumController:
             logger.error("[错误] 串口未连接")
             raise FerrumConnectionError("串口未连接")
 
-    def _send_command(self, command: str, retry: bool = True) -> str:
+    def _send_command(self, command: str, retry: bool = True, wait_response: bool = True) -> str:
         """
         发送命令到Ferrum设备并读取响应
 
@@ -147,6 +147,7 @@ class FerrumController:
         Args:
             command: 要发送的命令字符串
             retry: 失败时是否重试一次
+            wait_response: 是否等待响应（默认True，False用于快速连续操作）
 
         Returns:
             命令执行结果字符串（不含echo和prompt）
@@ -161,6 +162,10 @@ class FerrumController:
             full_command = command + "\r\n"
             self._serial.write(full_command.encode('utf-8'))
             logger.debug(f"[Ferrum] 发送命令: {command}")
+
+            # 如果不等待响应，直接返回
+            if not wait_response:
+                return ""
 
             # 读取响应直到遇到prompt
             response_lines = []
@@ -189,7 +194,7 @@ class FerrumController:
             if retry:
                 logger.warning(f"[Ferrum] 命令失败，重试一次: {command}")
                 time.sleep(0.1)
-                return self._send_command(command, retry=False)
+                return self._send_command(command, retry=False, wait_response=wait_response)
             logger.error(f"[错误] 命令执行失败 '{command}': {e}")
             raise FerrumConnectionError(f"命令执行失败 '{command}': {e}")
 
@@ -279,6 +284,27 @@ class FerrumController:
         """
         return self._connected and self._serial is not None and self._serial.is_open
 
+    def handshake(self) -> bool:
+        """
+        执行硬件握手验证
+
+        ComplianceGuard 要求的接口，用于验证硬件设备是否正常工作。
+        通过发送简单的查询命令来验证设备响应。
+
+        Returns:
+            True如果设备响应正常，否则False
+        """
+        try:
+            self._validate_connection()
+            # 发送一个简单的查询命令验证设备响应
+            # km.init() 会返回 "OK" 或类似的确认响应
+            result = self._send_command("km.init()")
+            # 只要命令能成功执行（不抛异常），就认为握手成功
+            return True
+        except Exception as e:
+            logger.warning(f"[Ferrum] 握手失败: {e}")
+            return False
+
 
     def _move(self, x: int, y: int) -> None:
         """
@@ -340,6 +366,52 @@ class FerrumController:
         # 点击左键
         self._send_command(f"km.click({BUTTON_LEFT})")
         logger.debug(f"[Ferrum] 点击 ({x}, {y})")
+
+    def move_and_click(self, x: int, y: int) -> None:
+        """
+        快速序列：移动鼠标并点击（优化延迟）
+
+        通过批量发送命令减少串口往返延迟。
+        先发送移动命令（不等待响应），立即发送点击命令。
+
+        Args:
+            x: 目标X坐标（绝对位置）
+            y: 目标Y坐标（绝对位置）
+        """
+        if not WIN32_AVAILABLE or win32api is None:
+            raise RuntimeError("win32api not available")
+
+        self._validate_connection()
+
+        # 获取当前鼠标位置
+        current_x, current_y = win32api.GetCursorPos()
+
+        # 计算相对位移
+        dx = x - current_x
+        dy = y - current_y
+
+        # 清空输入缓冲区
+        self._serial.reset_input_buffer()
+
+        # 快速连续发送：移动 + 点击（不等待每次响应）
+        # 只等待最后的点击响应
+        try:
+            print(f"[Ferrum] move_and_click: 当前({current_x}, {current_y}) -> 目标({x}, {y}), 相对({dx}, {dy})")
+
+            # 发送移动命令（不等待响应）
+            move_cmd = f"km.move({dx}, {dy})\r\n"
+            self._serial.write(move_cmd.encode('utf-8'))
+
+            # 小延迟确保命令发送完成（串口缓冲）
+            time.sleep(0.005)  # 5ms
+
+            # 发送点击命令（等待响应确认）
+            self._send_command(f"km.click({BUTTON_LEFT})")
+            print(f"[Ferrum] move_and_click 完成")
+
+        except Exception as e:
+            logger.error(f"[错误] 快速移动点击失败: {e}")
+            raise FerrumConnectionError(f"快速移动点击失败: {e}")
 
     def click_right(self, x: int, y: int) -> None:
         """

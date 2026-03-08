@@ -28,6 +28,11 @@ class ClickAction(BaseModel):
         None,
         description="Optional ROI as (x1, y1, x2, y2) for relative coordinates"
     )
+    random_y: int = Field(
+        0,
+        ge=0,
+        description="Random Y offset range (+/- pixels) for vertical randomization"
+    )
 
 
 class WaitAction(BaseModel):
@@ -94,10 +99,59 @@ class WaitImageAction(BaseModel):
         ge=1,
         description="Override polling interval in milliseconds (uses workflow default if not set)"
     )
+    stability_hits: int = Field(
+        1,
+        ge=1,
+        le=5,
+        description="Required consecutive hits for stability confirmation (default 1, max 5)"
+    )
+    threshold: float = Field(
+        0.8,
+        ge=0.0,
+        le=1.0,
+        description="Matching confidence threshold (default 0.8)"
+    )
+
+
+class ClickDetectedAction(BaseModel):
+    """
+    Click action at detected image position with safe-area randomization.
+
+    Detects image in ROI, then clicks at a random position within a
+    "safe area" (ROI shrunk by shrink_percent) to avoid clicking edges
+    and provide anti-detection randomization.
+    """
+    type: Literal["click_detected"]
+    image: str = Field(
+        ...,
+        description="Template image filename to detect and click"
+    )
+    roi: Tuple[int, int, int, int] = Field(
+        ...,
+        description="Region of interest as (x1, y1, x2, y2) for template matching"
+    )
+    threshold: float = Field(
+        0.8,
+        ge=0.0,
+        le=1.0,
+        description="Minimum confidence threshold for match"
+    )
+    shrink_percent: float = Field(
+        0.10,
+        ge=0.0,
+        le=0.5,
+        description="Shrink percentage for safe click area (default 10%, e.g., 0.10)"
+    )
+    y_offset: float = Field(
+        0.0,
+        ge=0.0,
+        le=0.9,
+        description="Vertical offset from top of ROI for clickable area (0.0-0.9, e.g., 0.33 skips top 33%)"
+    )
 
 
 # Discriminated union for all action types
-ActionConfig = Union[ClickAction, WaitAction, PressAction, ScrollAction, WaitImageAction]
+ActionConfig = Union[ClickAction, WaitAction, PressAction, ScrollAction, WaitImageAction, ClickDetectedAction]
 
 
 # =============================================================================

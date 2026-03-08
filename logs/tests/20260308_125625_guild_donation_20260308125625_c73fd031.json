@@ -1,0 +1,17 @@
+{
+  "test_id": "20260308125625_c73fd031",
+  "scenario_name": "guild_donation",
+  "start_time": "2026-03-08T12:56:25.347741",
+  "end_time": null,
+  "steps": [
+    {
+      "step_number": 1,
+      "instruction": "准备开始测试（有3秒等待时间切换窗口）",
+      "expected_result": "角色选择界面可见，显示角色列表",
+      "user_feedback": "Y",
+      "timestamp": "2026-03-08T12:56:52.832648",
+      "notes": ""
+    }
+  ],
+  "overall_result": "INCOMPLETE"
+}

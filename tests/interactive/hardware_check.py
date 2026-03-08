@@ -11,7 +11,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def check_ferrum_connection(port: str = "COM2", baudrate: int = 115200, timeout: float = 1.0) -> bool:
+def check_ferrum_connection(port: str = "COM2", baudrate: int = 115200, timeout: float = 1.0) -> dict:
     """
     检测Ferrum硬件设备是否已连接
 
@@ -24,8 +24,21 @@ def check_ferrum_connection(port: str = "COM2", baudrate: int = 115200, timeout:
         timeout: 超时时间（秒），默认1.0
 
     Returns:
-        True如果设备连接成功，False如果连接失败
+        字典包含连接结果信息:
+        - success (bool): 是否连接成功
+        - port (str): 连接的端口号
+        - baudrate (int): 波特率
+        - message (str): 状态信息
+        - error (str): 错误信息（如果有）
     """
+    result = {
+        "success": False,
+        "port": port,
+        "baudrate": baudrate,
+        "message": "",
+        "error": None
+    }
+
     try:
         # 延迟导入以避免循环依赖
         from core.ferrum_controller import FerrumController, FerrumConnectionError
@@ -37,21 +50,24 @@ def check_ferrum_connection(port: str = "COM2", baudrate: int = 115200, timeout:
 
         # 验证连接状态
         if controller.is_connected():
-            print(f"[Ferrum] 设备连接成功，串口{port}可用")
+            result["success"] = True
+            result["message"] = f"串口{port} @ {baudrate}bps"
+            print(f"[Ferrum] 设备连接成功，{result['message']}")
             # 关闭连接，避免占用串口
             controller.close()
-            return True
         else:
-            print(f"[错误] 设备连接状态异常")
+            result["error"] = "设备连接状态异常"
+            print(f"[错误] {result['error']}")
             controller.close()
-            return False
 
     except FerrumConnectionError as e:
-        print(f"[错误] Ferrum设备未连接: {e}")
-        return False
+        result["error"] = f"Ferrum设备未连接: {e}"
+        print(f"[错误] {result['error']}")
     except Exception as e:
-        print(f"[错误] 检测过程中发生异常: {e}")
-        return False
+        result["error"] = f"检测过程中发生异常: {e}"
+        print(f"[错误] {result['error']}")
+
+    return result
 
 
 class FerrumHardwareCheck:
@@ -209,7 +225,9 @@ class TestCheckFerrumConnection:
         result = check_ferrum_connection(port="COM2")
 
         # 验证结果
-        assert result is True
+        assert result["success"] is True
+        assert result["port"] == "COM2"
+        assert "COM2" in result["message"]
         mock_controller_class.assert_called_once_with(port="COM2", baudrate=115200, timeout=1.0)
         mock_controller.close.assert_called_once()
 
@@ -222,7 +240,8 @@ class TestCheckFerrumConnection:
 
         result = check_ferrum_connection(port="COM2")
 
-        assert result is False
+        assert result["success"] is False
+        assert result["error"] is not None
         mock_controller.close.assert_called_once()
 
     @patch('core.ferrum_controller.FerrumController')
@@ -233,7 +252,8 @@ class TestCheckFerrumConnection:
 
         result = check_ferrum_connection(port="COM2")
 
-        assert result is False
+        assert result["success"] is False
+        assert result["error"] is not None
 
     @patch('core.ferrum_controller.FerrumController')
     def test_unexpected_exception(self, mock_controller_class):
@@ -242,7 +262,8 @@ class TestCheckFerrumConnection:
 
         result = check_ferrum_connection(port="COM2")
 
-        assert result is False
+        assert result["success"] is False
+        assert result["error"] is not None
 
 
 class TestFerrumHardwareCheck:

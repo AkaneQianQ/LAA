@@ -5,38 +5,90 @@ Provides pre-defined test scenarios for guild donation and character detection
 workflows with Chinese instructions.
 """
 
-from typing import List, Optional
+from typing import List, Optional, Callable
+import time
+import logging
 
 from tests.interactive.test_flow import TestStep, TestScenario
 
+logger = logging.getLogger(__name__)
+
 
 # =============================================================================
-# Hardware Check Scenario (Meta-scenario for infrastructure validation)
+# Hardware Action Functions
 # =============================================================================
 
-HARDWARE_CHECK_SCENARIO = TestScenario(
-    name="hardware_check",
-    description="检测Ferrum硬件连接状态",
-    steps=[
-        TestStep(
-            step_id="hw_01",
-            instruction="检查Ferrum设备是否已连接",
-            expected_result="设备连接成功，串口COM2可用",
-            can_skip=False
-        ),
-        TestStep(
-            step_id="hw_02",
-            instruction="验证设备响应",
-            expected_result="设备响应正常，可以执行测试",
-            can_skip=False
-        ),
-    ]
-)
+def create_mouse_move_action(dx: int = 100, dy: int = 100) -> Callable[[], bool]:
+    """Create a mouse move action."""
+    def action() -> bool:
+        try:
+            from core.ferrum_controller import FerrumController
+            controller = FerrumController()
+            if controller.is_connected():
+                controller._move(dx, dy)  # 使用相对移动
+                controller.close()
+                return True
+            controller.close()
+            return False
+        except Exception as e:
+            logger.error(f"Mouse move action failed: {e}")
+            return False
+    return action
+
+
+def create_mouse_click_action() -> Callable[[], bool]:
+    """Create a mouse click action (click at current position)."""
+    def action() -> bool:
+        try:
+            from core.ferrum_controller import FerrumController
+            controller = FerrumController()
+            if controller.is_connected():
+                # 点击当前位置（不移动，所以delta为0,0）
+                controller._send_command(f"km.click(0)")  # 0 = left button
+                controller.close()
+                return True
+            controller.close()
+            return False
+        except Exception as e:
+            logger.error(f"Mouse click action failed: {e}")
+            return False
+    return action
+
+
+def create_key_press_action(key_name: str) -> Callable[[], bool]:
+    """Create a key press action."""
+    def action() -> bool:
+        try:
+            from core.ferrum_controller import FerrumController
+            controller = FerrumController()
+            if controller.is_connected():
+                controller.press(key_name)  # 使用键名如 "esc"
+                controller.close()
+                return True
+            controller.close()
+            return False
+        except Exception as e:
+            logger.error(f"Key press action failed: {e}")
+            return False
+    return action
 
 
 # =============================================================================
 # Guild Donation Workflow Scenario
 # =============================================================================
+
+def create_wait_action(seconds: int) -> Callable[[], bool]:
+    """Create a wait action that pauses for specified seconds."""
+    def action() -> bool:
+        try:
+            print(f"[等待] 暂停 {seconds} 秒，请切换到游戏窗口...")
+            time.sleep(seconds)
+            return True
+        except Exception as e:
+            logger.error(f"Wait action failed: {e}")
+            return False
+    return action
+
 
 GUILD_DONATION_SCENARIO = TestScenario(
     name="guild_donation",
@@ -44,9 +96,10 @@ GUILD_DONATION_SCENARIO = TestScenario(
     steps=[
         TestStep(
             step_id="gd_01",
-            instruction="打开游戏并进入角色选择界面",
+            instruction="准备开始测试，请切换到游戏窗口",
             expected_result="角色选择界面可见，显示角色列表",
-            can_skip=False
+            can_skip=False,
+            wait_seconds=3
         ),
         TestStep(
             step_id="gd_02",
@@ -147,7 +200,6 @@ CHARACTER_DETECTION_SCENARIO = TestScenario(
 # =============================================================================
 
 ALL_SCENARIOS: List[TestScenario] = [
-    HARDWARE_CHECK_SCENARIO,  # 第一个场景：硬件检测
     GUILD_DONATION_SCENARIO,
     CHARACTER_DETECTION_SCENARIO,
 ]

@@ -12,7 +12,7 @@ import threading
 
 from tests.interactive.overlay import TestOverlay
 from tests.interactive.test_logger import TestLogger
-from tests.interactive.test_flow import TestFlow
+from tests.interactive.test_flow import TestFlow, TestState
 from tests.interactive.scenarios import (
     ALL_SCENARIOS,
     list_scenario_names,
@@ -40,6 +40,11 @@ class TestRunner:
         self.selected_scenario = None
         self._number_hotkeys_registered = False
         self._selection_callbacks = {}
+        self._selection_handles = {}
+        self._menu_hotkey_registered = False
+        self._menu_hotkey_handle = None
+        self._retry_hotkey_handle = None
+        self._start_hotkey_handle = None
         self.hardware_available = False
         self.hardware_check_result = None
 
@@ -52,44 +57,69 @@ class TestRunner:
         self.logger = TestLogger()
         self.flow = TestFlow(self.overlay, self.logger)
 
-        # 执行硬件预检测
-        self._perform_hardware_check()
+        # 执行硬件检测（仅打印信息到终端，不阻塞测试）
+        self._perform_hardware_check_async()
+
+        # 直接显示场景选择
+        self.root.after(500, self.show_scenario_selection)
 
         logger.info("TestRunner initialized")
 
+    def _perform_hardware_check_async(self) -> None:
+        """
+        在后台线程执行硬件检测，避免阻塞UI
+
+        检测结果仅打印到终端，不影响测试流程。
+        """
+        def check_in_thread():
+            try:
+                print("=" * 50)
+                print("[Ferrum] 正在检测硬件连接...")
+                self.hardware_check_result = check_ferrum_connection()
+                self.hardware_available = self.hardware_check_result.get("success", False)
+
+                if self.hardware_available:
+                    port_info = self.hardware_check_result.get("message", "")
+                    print(f"[Ferrum] ✓ 连接成功 - {port_info}")
+                else:
+                    error_msg = self.hardware_check_result.get("error", "未知错误")
+                    print(f"[Ferrum] ✗ 连接失败 - {error_msg}")
+                    print("[Ferrum] 提示: 测试可以继续，但硬件操作将失败")
+                print("=" * 50)
+            except Exception as e:
+                print(f"[Ferrum] 检测异常: {e}")
+                self.hardware_available = False
+
+        # 在后台线程执行检测
+        import threading
+        threading.Thread(target=check_in_thread, daemon=True).start()
+
     def _perform_hardware_check(self) -> None:
         """
-        执行硬件预检测
+        执行硬件预检测（已弃用，改用 _perform_hardware_check_async）
 
-        检测Ferrum设备是否已连接。如果检测失败，显示错误信息并阻止测试继续。
+        检测Ferrum设备是否已连接。无论成功与否都显示详细信息。
         用户可以通过按R键重试检测。
         """
-        self.hardware_check_result = check_ferrum_connection()
-        self.hardware_available = self.hardware_check_result
-
-        if not self.hardware_available:
-            # 硬件检测失败，显示错误信息
-            error_text = "[错误] Ferrum硬件未连接，请检查: 1.设备电源 2.USB连接 3.COM端口 | 按 R 重试"
-            self.overlay.set_instruction(error_text)
-            self._register_retry_hotkey()
-        else:
-            # 硬件检测成功，继续显示场景选择
-            self.show_scenario_selection()
+        self._perform_hardware_check_async()
 
     def _register_retry_hotkey(self) -> None:
         """注册R键重试硬件检测的热键"""
         try:
             import keyboard
-            keyboard.add_hotkey('r', self._retry_hardware_check)
+            self._retry_hotkey_handle = keyboard.add_hotkey('r', self._retry_hardware_check)
             logger.debug("Registered R key for hardware check retry")
         except Exception as e:
             logger.warning(f"Failed to register retry hotkey: {e}")
 
     def _unregister_retry_hotkey(self) -> None:
         """注销R键重试热键"""
+        if self._retry_hotkey_handle is None:
+            return
         try:
             import keyboard
-            keyboard.remove_hotkey('r')
+            keyboard.remove_hotkey(self._retry_hotkey_handle)
+            self._retry_hotkey_handle = None
             logger.debug("Unregistered R key for hardware check retry")
         except Exception:
             pass
@@ -108,24 +138,73 @@ class TestRunner:
         """实际执行重试（在主线程中调用）"""
         print("[Ferrum] 正在重试硬件检测...")
         self._unregister_retry_hotkey()
+        self._unregister_menu_hotkey()
         self._perform_hardware_check()
+
+    def _register_menu_hotkey(self) -> None:
+        """注册M键返回主菜单的热键"""
+        if self._menu_hotkey_registered:
+            return
+        try:
+            import keyboard
+            self._menu_hotkey_handle = keyboard.add_hotkey('m', self._return_to_menu)
+            self._menu_hotkey_registered = True
+            logger.debug("Registered M key for returning to menu")
+        except Exception as e:
+            logger.warning(f"Failed to register menu hotkey: {e}")
+
+    def _unregister_menu_hotkey(self) -> None:
+        """注销M键返回主菜单的热键"""
+        if not self._menu_hotkey_registered or self._menu_hotkey_handle is None:
+            return
+        try:
+            import keyboard
+            keyboard.remove_hotkey(self._menu_hotkey_handle)
+            self._menu_hotkey_registered = False
+            self._menu_hotkey_handle = None
+            logger.debug("Unregistered M key for returning to menu")
+        except Exception:
+            pass
+
+    def _return_to_menu(self) -> None:
+        """返回主菜单（按M键时调用）"""
+        if self.root:
+            self.root.after(0, self._do_return_to_menu)
+
+    def _do_return_to_menu(self) -> None:
+        """实际返回主菜单（在主线程中调用）"""
+        logger.info("Returning to main menu")
+
+        # 清理当前测试状态
+        if self.flow:
+            self.flow.state = TestState.IDLE
+            self.flow.scenario = None
+            self.flow.current_step_index = -1
+            self.flow.test_id = None
+            self.selected_scenario = None
+
+        # 注销测试热键，重新注册菜单热键
+        self._unregister_test_hotkeys()
+        self._register_menu_hotkey()
+
+        # 显示场景选择
+        self.show_scenario_selection()
 
     def show_scenario_selection(self) -> None:
         """Show scenario selection UI in overlay."""
-        # 如果硬件不可用，显示错误而不是场景列表
-        if not self.hardware_available:
-            error_text = "[错误] Ferrum硬件未连接，请检查: 1.设备电源 2.USB连接 3.COM端口 | 按 R 重试"
-            self.overlay.set_instruction(error_text)
-            return
-
         scenario_names = list_scenario_names()
 
         if not scenario_names:
             self.overlay.set_instruction("错误: 没有可用的测试场景")
             return
 
+        # 获取硬件连接信息显示
+        hw_info = ""
+        if self.hardware_check_result and self.hardware_check_result.get("success"):
+            hw_info = f"[Ferrum已连接: {self.hardware_check_result.get('message', '')}] "
+
         # Build selection text (compact for horizontal layout)
-        selection_text = "选择场景: "
+        selection_text = f"{hw_info}选择场景: "
         for i, name in enumerate(scenario_names):
             scenario = get_scenario_by_name(name)
             desc = scenario.description if scenario else name
@@ -134,8 +213,9 @@ class TestRunner:
 
         self.overlay.set_instruction(selection_text)
 
-        # Register number key hotkeys for selection
+        # Register number key hotkeys for selection and M key for menu
         self._register_selection_hotkeys(scenario_names)
+        self._register_menu_hotkey()
 
     def _register_selection_hotkeys(self, scenario_names: list) -> None:
         """Register hotkeys for scenario selection."""
@@ -143,14 +223,16 @@ class TestRunner:
             import keyboard
 
             self._selection_callbacks = {}
+            self._selection_handles = {}
             for i, name in enumerate(scenario_names):
                 # Use default argument to capture name correctly
                 def make_callback(n=name):
                     return lambda: self._select_scenario(n)
 
                 callback = make_callback()
-                self._selection_callbacks[str(i+1)] = callback
-                keyboard.add_hotkey(str(i+1), callback)
+                key = str(i+1)
+                self._selection_callbacks[key] = callback
+                self._selection_handles[key] = keyboard.add_hotkey(key, callback)
 
             self._number_hotkeys_registered = True
             logger.debug(f"Registered {len(scenario_names)} selection hotkeys")
@@ -168,13 +250,14 @@ class TestRunner:
         try:
             import keyboard
 
-            for key in self._selection_callbacks:
+            for key, handle in self._selection_handles.items():
                 try:
-                    keyboard.remove_hotkey(key)
+                    keyboard.remove_hotkey(handle)
                 except Exception:
                     pass
 
             self._selection_callbacks = {}
+            self._selection_handles = {}
             self._number_hotkeys_registered = False
             logger.debug("Unregistered selection hotkeys")
 
@@ -182,6 +265,17 @@ class TestRunner:
             pass
         except Exception as e:
             logger.warning(f"Failed to unregister selection hotkeys: {e}")
+
+    def _unregister_test_hotkeys(self) -> None:
+        """Unregister test flow hotkeys (F1, Y, N, END)."""
+        try:
+            import keyboard
+            # Use overlay's unregister if available (it tracks handles properly)
+            if self.overlay:
+                self.overlay.unregister_hotkeys()
+            logger.debug("Unregistered test hotkeys")
+        except Exception:
+            pass
 
     def _select_scenario(self, scenario_name: str) -> None:
         """Handle scenario selection."""
@@ -210,7 +304,7 @@ class TestRunner:
         """Register F1 hotkey to start the test."""
         try:
             import keyboard
-            keyboard.add_hotkey('f1', self._start_selected_scenario)
+            self._start_hotkey_handle = keyboard.add_hotkey('f1', self._start_selected_scenario)
             logger.debug("Registered F1 start hotkey")
         except Exception as e:
             logger.warning(f"Failed to register F1 hotkey: {e}")
@@ -226,11 +320,13 @@ class TestRunner:
             return
 
         # Remove F1 start hotkey
-        try:
-            import keyboard
-            keyboard.remove_hotkey('f1')
-        except Exception:
-            pass
+        if self._start_hotkey_handle is not None:
+            try:
+                import keyboard
+                keyboard.remove_hotkey(self._start_hotkey_handle)
+                self._start_hotkey_handle = None
+            except Exception:
+                pass
 
         # Setup flow hotkeys
         self.flow.setup_hotkeys()
@@ -239,7 +335,43 @@ class TestRunner:
         self.flow.load_scenario(self.selected_scenario)
         self.flow.start()
 
+        # Start polling for test completion
+        self._poll_test_completion()
+
         logger.info(f"Started scenario: {self.selected_scenario.name}")
+
+    def _poll_test_completion(self) -> None:
+        """Poll for test completion and show return to menu option."""
+        if not self.flow or not self.root:
+            return
+
+        # Check if test is completed or terminated
+        if self.flow.state in (TestState.COMPLETED, TestState.TERMINATED):
+            # Test finished, show return to menu prompt
+            self._show_return_to_menu_prompt()
+        else:
+            # Continue polling
+            self.root.after(500, self._poll_test_completion)
+
+    def _show_return_to_menu_prompt(self) -> None:
+        """Show prompt to return to main menu after test completion."""
+        if not self.flow or not self.overlay:
+            return
+
+        # Get test result
+        result_text = "已完成"
+        if self.flow.state == TestState.COMPLETED and self.flow.test_id:
+            result = self.logger.get_test_result(self.flow.test_id)
+            if result:
+                result_text = result.overall_result
+
+        # Show return to menu prompt with M key
+        prompt_text = f"测试{result_text}！按 M 返回主菜单 | 按 END 关闭"
+        self.overlay.set_instruction(prompt_text)
+
+        # Ensure menu hotkey is registered
+        self._unregister_test_hotkeys()
+        self._register_menu_hotkey()
 
     def run(self) -> None:
         """Main run loop."""
@@ -262,12 +394,8 @@ class TestRunner:
         # Unregister hotkeys
         self._unregister_selection_hotkeys()
         self._unregister_retry_hotkey()
-
-        try:
-            import keyboard
-            keyboard.remove_hotkey('f1')
-        except Exception:
-            pass
+        self._unregister_menu_hotkey()
+        self._unregister_test_hotkeys()
 
         # Cleanup flow
         if self.flow:
