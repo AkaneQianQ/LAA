@@ -833,6 +833,44 @@ class CharacterDetector:
         finally:
             conn.close()
 
+    def find_account_by_perceptual_hash(self, screenshot: np.ndarray,
+                                        threshold: int = 10) -> Optional[Tuple[int, str]]:
+        """
+        使用感知哈希查找与当前截图相似的账号。
+
+        捕获账号标签ROI并使用感知哈希(pHash)与数据库中的账号进行对比，
+        返回最佳匹配的账号ID和哈希值。
+
+        Args:
+            screenshot: 全屏截图 (BGR numpy数组)
+            threshold: 汉明距离阈值 (默认10)，小于等于此值视为匹配
+
+        Returns:
+            元组 (account_id, account_hash) 或 None (未找到匹配)
+        """
+        try:
+            from core.perceptual_hash import find_similar_account
+
+            # Use perceptual hash to find similar account
+            result = find_similar_account(
+                self.db_path,
+                screenshot,
+                roi=ACCOUNT_TAG_ROI,
+                threshold=threshold
+            )
+
+            if result:
+                account_id, account_hash, distance = result
+                print(f"[Vision] Perceptual hash match found: account_id={account_id}, "
+                      f"account_hash={account_hash[:8]}..., distance={distance}")
+                return (account_id, account_hash)
+
+            return None
+
+        except Exception as e:
+            print(f"[ERROR] Failed to find account by perceptual hash: {e}")
+            return None
+
     def create_or_get_account_index(self, screenshot: np.ndarray) -> Tuple[int, str]:
         """
         Create or retrieve account index based on account tag ROI.

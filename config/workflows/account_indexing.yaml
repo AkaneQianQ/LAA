@@ -1,0 +1,56 @@
+# Account Indexing Workflow - Step 0 Implementation
+# Performs ESC menu -> wait -> capture account tag -> match/create account
+#
+# This workflow:
+# - Opens ESC menu on character selection screen
+# - Waits 200ms for UI stabilization
+# - Captures account tag ROI (666, 793, 772, 902)
+# - Uses perceptual hash to match against existing accounts
+# - Creates new account if no match found
+
+name: account_indexing
+start_step_id: open_esc_menu
+
+wait_defaults:
+  timeout_ms: 10000
+  poll_interval_ms: 50
+  retry_interval_ms: 1000
+
+steps:
+  # Step 0: Open ESC menu
+  - step_id: open_esc_menu
+    action:
+      type: press
+      key_name: esc
+    next: wait_after_esc
+
+  # Step 1: Wait 200ms for UI stabilization
+  - step_id: wait_after_esc
+    action:
+      type: wait
+      duration_ms: 200
+    next: capture_account_tag
+
+  # Step 2: Capture account tag ROI
+  # ROI: (666, 793, 772, 902) - account identification area
+  - step_id: capture_account_tag
+    action:
+      type: capture_roi
+      roi: [666, 793, 772, 902]
+      output_key: account_tag_image
+    next: match_or_create_account
+
+  # Step 3: Match against existing accounts or create new
+  # This is a conditional step handled by the executor
+  - step_id: match_or_create_account
+    action:
+      type: wait
+      duration_ms: 100
+    next: workflow_complete
+
+  # Step 4: Workflow complete
+  - step_id: workflow_complete
+    action:
+      type: wait
+      duration_ms: 100
+    next: null
