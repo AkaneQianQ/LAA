@@ -9,6 +9,13 @@ import time
 import logging
 from typing import Optional, List, Dict
 
+try:
+    import win32api
+    WIN32_AVAILABLE = True
+except ImportError:
+    WIN32_AVAILABLE = False
+    win32api = None
+
 # 配置日志
 logger = logging.getLogger(__name__)
 
@@ -285,6 +292,36 @@ class FerrumController:
             y: Y方向相对移动（正数=下，负数=上）
         """
         self._send_command(f"km.move({x}, {y})")
+
+    def move_absolute(self, x: int, y: int) -> None:
+        """
+        移动鼠标到绝对坐标位置
+
+        使用win32api.GetCursorPos()获取当前位置，计算相对位移，
+        然后调用km.move()进行移动。
+
+        Args:
+            x: 目标X坐标（绝对位置）
+            y: 目标Y坐标（绝对位置）
+
+        Raises:
+            RuntimeError: 如果win32api不可用
+        """
+        if not WIN32_AVAILABLE or win32api is None:
+            raise RuntimeError("win32api not available, cannot get current cursor position")
+
+        self._validate_connection()
+
+        # 获取当前鼠标位置
+        current_x, current_y = win32api.GetCursorPos()
+
+        # 计算相对位移
+        dx = x - current_x
+        dy = y - current_y
+
+        # 发送相对移动命令
+        self._send_command(f"km.move({dx}, {dy})")
+        logger.debug(f"[Ferrum] 绝对移动: 当前({current_x}, {current_y}) -> 目标({x}, {y}), 相对({dx}, {dy})")
 
     def click(self, x: int, y: int) -> None:
         """

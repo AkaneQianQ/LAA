@@ -55,6 +55,12 @@ SCROLLBAR_BOTTOM_ROI: Tuple[int, int, int, int] = (1683, 828, 1697, 860)
 # 根据 CLAUDE.md: Current ID (ESC menu): (657, 854, 831, 876)
 ESC_MENU_ROI: Tuple[int, int, int, int] = (657, 854, 831, 876)
 
+# Account tag ROI for account identification (new ROI to prevent UI color change)
+ACCOUNT_TAG_ROI: Tuple[int, int, int, int] = (666, 793, 772, 902)
+
+# Mouse safe position to prevent UI color change when hovering over character slots
+MOUSE_SAFE_POSITION: Tuple[int, int] = (827, 516)
+
 
 # =============================================================================
 # DETECTION CONFIGURATION CONSTANTS

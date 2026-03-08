@@ -383,3 +383,31 @@ class HardwareInputGateway:
     def reset_jitter(self) -> None:
         """Reset jitter generator (for testing reproducibility)."""
         self._jitter.reset()
+
+    def move_mouse(self, x: int, y: int, base_delay_ms: float = 50) -> None:
+        """
+        移动鼠标到指定绝对坐标位置
+
+        通过硬件控制器移动鼠标到绝对坐标位置。
+        使用win32api获取当前位置并计算相对位移。
+
+        Args:
+            x: 目标X坐标（绝对位置）
+            y: 目标Y坐标（绝对位置）
+            base_delay_ms: 移动后的基础延迟（带抖动）
+
+        Raises:
+            InputPolicyViolation: 如果没有可用的硬件控制器
+        """
+        self._validate_hardware_only()
+
+        if self._hardware is None:
+            raise InputPolicyViolation("No hardware controller available for mouse move action")
+
+        self._action_count += 1
+
+        # 通过硬件执行绝对移动
+        self._hardware.move_absolute(x, y)
+
+        # 应用抖动延迟
+        self._sleep_with_jitter(base_delay_ms)
