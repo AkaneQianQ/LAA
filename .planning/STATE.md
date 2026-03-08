@@ -5,9 +5,9 @@ milestone_name: milestone
 current_phase: 7
 current_plan: Not started
 status: completed
-last_updated: "2026-03-07T18:29:09.580Z"
+last_updated: "2026-03-08T05:35:00.000Z"
 progress:
-  total_phases: 8
+  total_phases: 9
   completed_phases: 7
   total_plans: 23
   completed_plans: 23
@@ -196,12 +196,14 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 | Phase 07 P01 | 15 min | 6 tasks | 1 files |
 | Phase 07 P02 | 15 min | 6 tasks | 2 files |
 | Phase 07 P04 | 25 min | 6 tasks | 4 files |
+| Phase quick P2 | 20 | 4 tasks | 5 files |
 
 ### Quick Tasks Completed
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 1 | 添加Ferrum硬件连接预检测试，确保所有测试前硬件连接正常 | 2026-03-07 | fc0fd75 | [1-ferrum](./quick/1-ferrum/) |
+| 2 | 修改账号TAG ROI和截图逻辑：新ROI(666,793,772,902)，防UI变色鼠标移动，延迟首角色截图 | 2026-03-08 | 4d067c8 | [2-tag-roi](./quick/2-tag-roi-roi-666-793-772-902-ui/) |
 
 ## Accumulated Context
 
