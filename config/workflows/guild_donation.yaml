@@ -194,6 +194,20 @@ steps:
       key_name: esc
     next: wait_guild_ui_close
 
+  # Step 6c: Wait for guild UI to close
+  # Polls every 100ms with 500ms timeout
+  # If still detected after timeout, press ESC again
+  # If not detected, workflow completes successfully
+  - step_id: wait_guild_ui_close
+    action:
+      type: wait_image
+      state: disappear
+      image: guild_ui.bmp
+      roi: [546, 803, 903, 835]
+      timeout_ms: 500
+      poll_interval_ms: 100
+    next: check_ui_closed
+
   # Step 7: Workflow complete (fallback)
   - step_id: workflow_complete
     action:
