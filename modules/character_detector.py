@@ -639,12 +639,22 @@ class CharacterDetector:
         screenshot_bytes = screenshot.tobytes()
         return hashlib.sha256(screenshot_bytes).hexdigest()
 
-    def _ensure_account_directory(self, account_hash: str) -> str:
+    def _ensure_account_directory(self, account_hash: str, total_character_count: int = 0) -> str:
         """
         Create account directory structure if it doesn't exist.
 
+        New directory structure:
+            data/accounts/{account_hash}/
+                ├── tag.png              # 账号标签ROI截图
+                ├── characters/          # 角色截图目录
+                │   ├── 0.png           # 角色1截图
+                │   ├── 1.png           # 角色2截图
+                │   └── ...
+                └── account_info.json   # 账号元数据
+
         Args:
             account_hash: The account hash identifier
+            total_character_count: Total number of characters (for account_info.json)
 
         Returns:
             Path to the account directory
@@ -654,7 +664,88 @@ class CharacterDetector:
 
         os.makedirs(chars_dir, exist_ok=True)
 
+        # Create account_info.json if it doesn't exist
+        info_path = os.path.join(account_dir, "account_info.json")
+        if not os.path.exists(info_path):
+            self._save_account_info(account_dir, account_hash, total_character_count)
+
         return account_dir
+
+    def _save_account_info(self, account_dir: str, account_hash: str,
+                           total_character_count: int) -> None:
+        """
+        Save account metadata to account_info.json.
+
+        Args:
+            account_dir: Path to the account directory
+            account_hash: The account hash identifier
+            total_character_count: Total number of characters
+        """
+        import json
+
+        info = {
+            'account_hash': account_hash,
+            'total_character_count': total_character_count,
+            'created_at': datetime.now().isoformat(),
+            'updated_at': datetime.now().isoformat(),
+        }
+
+        info_path = os.path.join(account_dir, "account_info.json")
+        with open(info_path, 'w', encoding='utf-8') as f:
+            json.dump(info, f, ensure_ascii=False, indent=2)
+
+    def _load_account_info(self, account_hash: str) -> Optional[Dict[str, Any]]:
+        """
+        Load account metadata from account_info.json.
+
+        Args:
+            account_hash: The account hash identifier
+
+        Returns:
+            Account info dictionary or None if not found
+        """
+        import json
+
+        account_dir = os.path.join(self.data_dir, "accounts", account_hash)
+        info_path = os.path.join(account_dir, "account_info.json")
+
+        if not os.path.exists(info_path):
+            return None
+
+        try:
+            with open(info_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return None
+
+    def _update_account_info(self, account_hash: str,
+                             total_character_count: Optional[int] = None) -> None:
+        """
+        Update account metadata in account_info.json.
+
+        Args:
+            account_hash: The account hash identifier
+            total_character_count: New total character count (optional)
+        """
+        import json
+
+        account_dir = os.path.join(self.data_dir, "accounts", account_hash)
+        info_path = os.path.join(account_dir, "account_info.json")
+
+        # Load existing info or create new
+        if os.path.exists(info_path):
+            info = self._load_account_info(account_hash) or {}
+        else:
+            info = {'account_hash': account_hash}
+
+        # Update fields
+        if total_character_count is not None:
+            info['total_character_count'] = total_character_count
+        info['updated_at'] = datetime.now().isoformat()
+
+        # Save back
+        with open(info_path, 'w', encoding='utf-8') as f:
+            json.dump(info, f, ensure_ascii=False, indent=2)
 
     def _move_mouse_to_safe_position(self) -> None:
         """
@@ -778,16 +869,17 @@ class CharacterDetector:
         account_id = get_or_create_account(self.db_path, account_hash)
 
         # Step 5: Ensure directory structure exists and save account tag
-        account_dir = self._ensure_account_directory(account_hash)
+        # Count total characters for account_info.json
+        slot_results = self.scan_visible_slots(screenshot)
+        occupied_slots = [r for r in slot_results if r.has_character]
+        total_character_count = len(occupied_slots)
+
+        account_dir = self._ensure_account_directory(account_hash, total_character_count)
         tag_path = os.path.join(account_dir, "tag.png")
         cv2.imwrite(tag_path, tag_screenshot)
 
         # Update database with tag screenshot path
         self._update_account_tag_path(account_id, tag_path)
-
-        # Scan slots to find occupied ones
-        slot_results = self.scan_visible_slots(screenshot)
-        occupied_slots = [r for r in slot_results if r.has_character]
 
         if not occupied_slots:
             return account_id, account_hash
@@ -811,6 +903,9 @@ class CharacterDetector:
                 cv2.imwrite(screenshot_path, slot_screenshot)
                 # Update database with character metadata
                 upsert_character(self.db_path, account_id, slot.slot_index, screenshot_path)
+
+        # Update account_info.json with final character count
+        self._update_account_info(account_hash, total_character_count)
 
         return account_id, account_hash
 
@@ -889,6 +984,9 @@ class CharacterDetector:
                 upsert_character(self.db_path, account_id, 0, screenshot_path)
         finally:
             conn.close()
+
+        # 更新account_info.json中的updated_at
+        self._update_account_info(self._pending_account_hash)
 
         # 重置待捕获状态
         self._pending_first_slot_capture = False
