@@ -208,6 +208,21 @@ steps:
       poll_interval_ms: 100
     next: check_ui_closed
 
+  # Step 6d: Check if guild UI is still visible after ESC
+  # If still detected (true), press ESC again
+  # If not detected (false), workflow completes
+  - step_id: check_ui_closed
+    action:
+      type: wait
+      duration_ms: 50
+    on_true: final_esc_press
+    on_false: workflow_complete
+    condition:
+      type: image
+      template: guild_ui.bmp
+      roi: [546, 803, 903, 835]
+      threshold: 0.8
+
   # Step 7: Workflow complete (fallback)
   - step_id: workflow_complete
     action:
