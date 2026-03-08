@@ -178,6 +178,15 @@ steps:
       duration_ms: 100
     next: write_donation_cache
 
+  # Step 6a: Write character donation status to cache
+  # Placeholder: Records character ID (visual hash) and donation completion
+  # TODO: Implement custom action type 'write_cache' in workflow_runtime.py
+  - step_id: write_donation_cache
+    action:
+      type: wait
+      duration_ms: 50
+    next: press_esc_close
+
   # Step 7: Workflow complete (fallback)
   - step_id: workflow_complete
     action:
