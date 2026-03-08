@@ -223,6 +223,13 @@ steps:
       roi: [546, 803, 903, 835]
       threshold: 0.8
 
+  # Step 6e: Final ESC press if UI still visible
+  - step_id: final_esc_press
+    action:
+      type: press
+      key_name: esc
+    next: workflow_complete
+
   # Step 7: Workflow complete (fallback)
   - step_id: workflow_complete
     action:
