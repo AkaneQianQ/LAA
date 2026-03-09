@@ -169,6 +169,44 @@ The KMBox device communicates over serial (default COM2, 115200 baud):
 - `[任务]`: Task/automation messages
 - `[错误]`: Error messages
 
+### Windows Console Unicode Handling
+
+**Default Header for Python Scripts:**
+
+All Python scripts must include the following header to fix Windows console Unicode issues:
+
+```python
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+import sys
+import io
+
+# Fix Windows console encoding for Chinese output
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+```
+
+**Console Output Guidelines:**
+- Avoid Unicode emoji characters (✅, ❌, ✓, →) in print statements
+- Use ASCII alternatives: `[OK]`, `[ERROR]`, `[DONE]`, `-->`
+- For status indicators, use bracketed text: `[SUCCESS]`, `[FAILED]`, `[WARNING]`
+- Example:
+  ```python
+  # Bad
+  print(f"✓ 工作流名称: {name}")
+  print(f"❌ 加载失败: {e}")
+
+  # Good
+  print(f"[OK] 工作流名称: {name}")
+  print(f"[ERROR] 加载失败: {e}")
+  ```
+
+**Alternative: Set Console Code Page (for batch scripts):**
+```batch
+chcp 65001 >nul  # Set UTF-8 code page
+```
+
 ## Workflow Development Guidelines
 
 **Image Detection Click Randomization:**

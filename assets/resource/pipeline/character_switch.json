@@ -1,0 +1,222 @@
+{
+    "verify_character_selection_screen": {
+        "desc": "verify_character_selection_screen",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "assets/character_selection_ui.bmp",
+                "roi": [
+                    500,
+                    500,
+                    1000,
+                    800
+                ],
+                "threshold": 0.7
+            }
+        },
+        "timeout": 5000,
+        "next": [
+            "scroll_to_top"
+        ]
+    },
+    "scroll_to_top": {
+        "desc": "scroll_to_top",
+        "action": {
+            "type": "Scroll",
+            "param": {
+                "direction": "up",
+                "ticks": 10
+            }
+        },
+        "next": [
+            "wait_after_scroll_top"
+        ]
+    },
+    "wait_after_scroll_top": {
+        "desc": "wait_after_scroll_top",
+        "action": {
+            "type": "Wait",
+            "param": {
+                "duration_ms": 300
+            }
+        },
+        "next": [
+            "scan_current_visible_slots"
+        ]
+    },
+    "scan_current_visible_slots": {
+        "desc": "scan_current_visible_slots",
+        "next": [
+            "check_target_found"
+        ]
+    },
+    "check_target_found": {
+        "desc": "check_target_found",
+        "action": {
+            "type": "Wait",
+            "param": {
+                "duration_ms": 100
+            }
+        },
+        "on_true": "click_target_character",
+        "on_false": "scroll_and_continue_search"
+    },
+    "click_target_character": {
+        "desc": "click_target_character",
+        "next": [
+            "wait_after_character_click"
+        ]
+    },
+    "wait_after_character_click": {
+        "desc": "wait_after_character_click",
+        "action": {
+            "type": "Wait",
+            "param": {
+                "duration_ms": 200
+            }
+        },
+        "next": [
+            "click_login_button"
+        ]
+    },
+    "click_login_button": {
+        "desc": "click_login_button",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "assets/btn_login_yellow.bmp",
+                "roi": [
+                    1200,
+                    880,
+                    1700,
+                    960
+                ],
+                "threshold": 0.8
+            }
+        },
+        "action": {
+            "type": "Click"
+        },
+        "next": [
+            "wait_for_login_complete"
+        ]
+    },
+    "wait_for_login_complete": {
+        "desc": "wait_for_login_complete",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "assets/login_popup_confirm.bmp",
+                "roi": [
+                    1100,
+                    700,
+                    1500,
+                    1100
+                ],
+                "threshold": 0.7
+            }
+        },
+        "timeout": 3000,
+        "on_true": "handle_login_confirm_popup",
+        "on_false": "wait_for_game_load"
+    },
+    "handle_login_confirm_popup": {
+        "desc": "handle_login_confirm_popup",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "assets/login_popup_confirm.bmp",
+                "roi": [
+                    1100,
+                    700,
+                    1500,
+                    1100
+                ],
+                "threshold": 0.7
+            }
+        },
+        "action": {
+            "type": "Click"
+        },
+        "next": [
+            "wait_for_game_load"
+        ]
+    },
+    "wait_for_game_load": {
+        "desc": "wait_for_game_load",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "assets/game_ui_loaded.bmp",
+                "roi": [
+                    0,
+                    0,
+                    500,
+                    500
+                ],
+                "threshold": 0.7
+            }
+        },
+        "timeout": 30000,
+        "next": [
+            "workflow_complete"
+        ]
+    },
+    "scroll_and_continue_search": {
+        "desc": "scroll_and_continue_search",
+        "action": {
+            "type": "Scroll",
+            "param": {
+                "direction": "down",
+                "ticks": 3
+            }
+        },
+        "next": [
+            "wait_after_scroll_search"
+        ]
+    },
+    "wait_after_scroll_search": {
+        "desc": "wait_after_scroll_search",
+        "action": {
+            "type": "Wait",
+            "param": {
+                "duration_ms": 300
+            }
+        },
+        "next": [
+            "check_max_scroll_reached"
+        ]
+    },
+    "check_max_scroll_reached": {
+        "desc": "check_max_scroll_reached",
+        "action": {
+            "type": "Wait",
+            "param": {
+                "duration_ms": 100
+            }
+        },
+        "on_true": "character_not_found_error",
+        "on_false": "scan_current_visible_slots"
+    },
+    "character_not_found_error": {
+        "desc": "character_not_found_error",
+        "next": [
+            "workflow_complete"
+        ]
+    },
+    "workflow_complete": {
+        "desc": "workflow_complete",
+        "action": {
+            "type": "Wait",
+            "param": {
+                "duration_ms": 100
+            }
+        }
+    },
+    "character_switchMain": {
+        "desc": "character_switch main entry",
+        "next": [
+            "verify_character_selection_screen"
+        ]
+    }
+}

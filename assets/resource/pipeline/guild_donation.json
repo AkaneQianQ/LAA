@@ -1,0 +1,428 @@
+{
+    "move_mouse_safe_position": {
+        "desc": "move_mouse_safe_position",
+        "next": [
+            "wait_after_move"
+        ]
+    },
+    "wait_after_move": {
+        "desc": "wait_after_move",
+        "action": {
+            "type": "Wait",
+            "param": {
+                "duration_ms": 100
+            }
+        },
+        "next": [
+            "open_guild_menu"
+        ]
+    },
+    "open_guild_menu": {
+        "desc": "open_guild_menu",
+        "action": {
+            "type": "KeyPress",
+            "param": {
+                "key": "alt+u"
+            }
+        },
+        "next": [
+            "wait_menu_appear"
+        ]
+    },
+    "wait_menu_appear": {
+        "desc": "wait_menu_appear",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "assets/guild_ui.bmp",
+                "roi": [
+                    546,
+                    803,
+                    903,
+                    835
+                ],
+                "threshold": 0.7
+            }
+        },
+        "timeout": 5000,
+        "next": [
+            "check_first_confirm"
+        ]
+    },
+    "check_first_confirm": {
+        "desc": "check_first_confirm",
+        "action": {
+            "type": "Wait",
+            "param": {
+                "duration_ms": 100
+            }
+        },
+        "on_true": "handle_first_confirm",
+        "on_false": "stage4_first_donation"
+    },
+    "handle_first_confirm": {
+        "desc": "handle_first_confirm",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "assets/guild_first_confirm.bmp",
+                "roi": [
+                    1229,
+                    657,
+                    1331,
+                    937
+                ],
+                "threshold": 0.8
+            }
+        },
+        "action": {
+            "type": "Click"
+        },
+        "next": [
+            "stage4_first_donation"
+        ]
+    },
+    "stage4_first_donation": {
+        "desc": "stage4_first_donation",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "assets/guild_first_donation.bmp",
+                "roi": [
+                    1863,
+                    450,
+                    2019,
+                    483
+                ],
+                "threshold": 0.8
+            }
+        },
+        "action": {
+            "type": "Click"
+        },
+        "next": [
+            "stage4_second_donation"
+        ]
+    },
+    "stage4_second_donation": {
+        "desc": "stage4_second_donation",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "assets/guild_first_donation2.bmp",
+                "roi": [
+                    954,
+                    702,
+                    1077,
+                    742
+                ],
+                "threshold": 0.8
+            }
+        },
+        "action": {
+            "type": "Click"
+        },
+        "next": [
+            "press_esc_after_stage4"
+        ]
+    },
+    "press_esc_after_stage4": {
+        "desc": "press_esc_after_stage4",
+        "action": {
+            "type": "KeyPress",
+            "param": {
+                "key": "esc"
+            }
+        },
+        "next": [
+            "wait_after_stage4"
+        ]
+    },
+    "wait_after_stage4": {
+        "desc": "wait_after_stage4",
+        "action": {
+            "type": "Wait",
+            "param": {
+                "duration_ms": 50
+            }
+        },
+        "next": [
+            "check_sec_donation"
+        ]
+    },
+    "check_sec_donation": {
+        "desc": "check_sec_donation",
+        "action": {
+            "type": "Wait",
+            "param": {
+                "duration_ms": 100
+            }
+        },
+        "on_true": "click_sec_donation1",
+        "on_false": "no_support_today"
+    },
+    "click_sec_donation1": {
+        "desc": "click_sec_donation1",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "assets/guild_sec_donation1.bmp",
+                "roi": [
+                    1551,
+                    606,
+                    1693,
+                    635
+                ],
+                "threshold": 0.8
+            }
+        },
+        "action": {
+            "type": "Click"
+        },
+        "next": [
+            "wait_sec_donation2"
+        ]
+    },
+    "wait_sec_donation2": {
+        "desc": "wait_sec_donation2",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "assets/guild_sec_donation2.bmp",
+                "roi": [
+                    1010,
+                    602,
+                    1253,
+                    794
+                ],
+                "threshold": 0.7
+            }
+        },
+        "timeout": 1000,
+        "next": [
+            "click_sec_donation2"
+        ]
+    },
+    "click_sec_donation2": {
+        "desc": "click_sec_donation2",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "assets/guild_sec_donation2.bmp",
+                "roi": [
+                    1010,
+                    602,
+                    1253,
+                    794
+                ],
+                "threshold": 0.7
+            }
+        },
+        "action": {
+            "type": "Click"
+        },
+        "next": [
+            "wait_after_sec_donation2"
+        ]
+    },
+    "wait_after_sec_donation2": {
+        "desc": "wait_after_sec_donation2",
+        "action": {
+            "type": "Wait",
+            "param": {
+                "duration_ms": 50
+            }
+        },
+        "next": [
+            "click_sec_donation2_fixed"
+        ]
+    },
+    "click_sec_donation2_fixed": {
+        "desc": "click_sec_donation2_fixed",
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [
+                    0,
+                    0
+                ]
+            }
+        },
+        "next": [
+            "donation_complete"
+        ]
+    },
+    "no_support_today": {
+        "desc": "no_support_today",
+        "action": {
+            "type": "KeyPress",
+            "param": {
+                "key": "esc"
+            }
+        },
+        "next": [
+            "wait_no_support_ui_close"
+        ]
+    },
+    "wait_no_support_ui_close": {
+        "desc": "wait_no_support_ui_close",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "assets/guild_ui.bmp",
+                "roi": [
+                    546,
+                    803,
+                    903,
+                    835
+                ],
+                "threshold": 0.8
+            }
+        },
+        "timeout": 500,
+        "next": [
+            "workflow_complete"
+        ]
+    },
+    "check_no_support_ui_closed": {
+        "desc": "check_no_support_ui_closed",
+        "action": {
+            "type": "Wait",
+            "param": {
+                "duration_ms": 200
+            }
+        },
+        "on_true": "final_esc_no_support",
+        "on_false": "workflow_complete"
+    },
+    "final_esc_no_support": {
+        "desc": "final_esc_no_support",
+        "action": {
+            "type": "KeyPress",
+            "param": {
+                "key": "esc"
+            }
+        },
+        "next": [
+            "wait_after_no_support_esc"
+        ]
+    },
+    "wait_after_no_support_esc": {
+        "desc": "wait_after_no_support_esc",
+        "action": {
+            "type": "Wait",
+            "param": {
+                "duration_ms": 300
+            }
+        },
+        "next": [
+            "check_no_support_ui_closed"
+        ]
+    },
+    "donation_complete": {
+        "desc": "donation_complete",
+        "action": {
+            "type": "Wait",
+            "param": {
+                "duration_ms": 100
+            }
+        },
+        "next": [
+            "write_donation_cache"
+        ]
+    },
+    "write_donation_cache": {
+        "desc": "write_donation_cache",
+        "action": {
+            "type": "Wait",
+            "param": {
+                "duration_ms": 50
+            }
+        },
+        "next": [
+            "press_esc_close"
+        ]
+    },
+    "press_esc_close": {
+        "desc": "press_esc_close",
+        "action": {
+            "type": "KeyPress",
+            "param": {
+                "key": "esc"
+            }
+        },
+        "next": [
+            "wait_guild_ui_close"
+        ]
+    },
+    "wait_guild_ui_close": {
+        "desc": "wait_guild_ui_close",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "assets/guild_ui.bmp",
+                "roi": [
+                    546,
+                    803,
+                    903,
+                    835
+                ],
+                "threshold": 0.8
+            }
+        },
+        "timeout": 500,
+        "next": [
+            "workflow_complete"
+        ]
+    },
+    "check_ui_closed": {
+        "desc": "check_ui_closed",
+        "action": {
+            "type": "Wait",
+            "param": {
+                "duration_ms": 200
+            }
+        },
+        "on_true": "final_esc_press",
+        "on_false": "workflow_complete"
+    },
+    "final_esc_press": {
+        "desc": "final_esc_press",
+        "action": {
+            "type": "KeyPress",
+            "param": {
+                "key": "esc"
+            }
+        },
+        "next": [
+            "wait_after_final_esc"
+        ]
+    },
+    "wait_after_final_esc": {
+        "desc": "wait_after_final_esc",
+        "action": {
+            "type": "Wait",
+            "param": {
+                "duration_ms": 300
+            }
+        },
+        "next": [
+            "check_ui_closed"
+        ]
+    },
+    "workflow_complete": {
+        "desc": "workflow_complete",
+        "action": {
+            "type": "Wait",
+            "param": {
+                "duration_ms": 100
+            }
+        }
+    },
+    "guild_donationMain": {
+        "desc": "guild_donation main entry",
+        "next": [
+            "move_mouse_safe_position"
+        ]
+    }
+}

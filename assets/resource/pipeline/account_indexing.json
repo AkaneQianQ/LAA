@@ -1,0 +1,72 @@
+{
+    "open_esc_menu": {
+        "desc": "open_esc_menu",
+        "action": {
+            "type": "KeyPress",
+            "param": {
+                "key": "esc"
+            }
+        },
+        "next": [
+            "wait_after_esc"
+        ]
+    },
+    "wait_after_esc": {
+        "desc": "wait_after_esc",
+        "action": {
+            "type": "Wait",
+            "param": {
+                "duration_ms": 200
+            }
+        },
+        "next": [
+            "capture_account_tag"
+        ]
+    },
+    "capture_account_tag": {
+        "desc": "capture_account_tag",
+        "recognition": {
+            "type": "Custom",
+            "custom_recognition": "CaptureROI",
+            "param": {
+                "roi": [
+                    666,
+                    793,
+                    772,
+                    902
+                ],
+                "output_key": "account_tag_image"
+            }
+        },
+        "next": [
+            "match_or_create_account"
+        ]
+    },
+    "match_or_create_account": {
+        "desc": "match_or_create_account",
+        "action": {
+            "type": "Wait",
+            "param": {
+                "duration_ms": 100
+            }
+        },
+        "next": [
+            "workflow_complete"
+        ]
+    },
+    "workflow_complete": {
+        "desc": "workflow_complete",
+        "action": {
+            "type": "Wait",
+            "param": {
+                "duration_ms": 100
+            }
+        }
+    },
+    "account_indexingMain": {
+        "desc": "account_indexing main entry",
+        "next": [
+            "open_esc_menu"
+        ]
+    }
+}

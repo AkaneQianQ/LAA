@@ -10,23 +10,30 @@
 # Forward imports to new locations
 from agent.py_service.pkg.ferrum.controller import FerrumController
 from agent.py_service.pkg.vision.engine import VisionEngine
-from agent.py_service.pkg.workflow.bootstrap import WorkflowBootstrap
-from agent.py_service.pkg.workflow.compiler import WorkflowCompiler
-from agent.py_service.pkg.workflow.executor import WorkflowExecutor
+from agent.py_service.pkg.workflow.bootstrap import create_workflow_executor, create_workflow_executor_with_account
+from agent.py_service.pkg.workflow.compiler import compile_workflow, WorkflowCompilationError
+from agent.py_service.pkg.workflow.executor import WorkflowExecutor, ExecutionError, ExecutionResult
 from agent.py_service.pkg.workflow.runtime import ActionDispatcher, ConditionEvaluator
-from agent.py_service.pkg.workflow.schema import WorkflowSchema
+from agent.py_service.pkg.workflow.schema import WorkflowConfig, ConfigLoadError
 from agent.py_service.pkg.recovery.orchestrator import RecoveryOrchestrator
-from agent.py_service.pkg.common.database import Database
+from agent.py_service.pkg.common.database import init_database, get_or_create_account, upsert_character
 
 __all__ = [
     "FerrumController",
     "VisionEngine",
-    "WorkflowBootstrap",
-    "WorkflowCompiler",
+    "create_workflow_executor",
+    "create_workflow_executor_with_account",
+    "compile_workflow",
+    "WorkflowCompilationError",
     "WorkflowExecutor",
+    "ExecutionError",
+    "ExecutionResult",
     "ActionDispatcher",
     "ConditionEvaluator",
-    "WorkflowSchema",
+    "WorkflowConfig",
+    "ConfigLoadError",
     "RecoveryOrchestrator",
-    "Database",
+    "init_database",
+    "get_or_create_account",
+    "upsert_character",
 ]

@@ -1,0 +1,97 @@
+{
+    "interface_version": 1,
+    "name": "FerrumBot",
+    "description": "Lost Ark 公会捐赠自动化助手 - MaaEnd 结构",
+    "version": "v1.0.0",
+    "license": "LICENSE",
+
+    "controller": [
+        {
+            "name": "KMBox-Default",
+            "label": "KMBox 默认 (COM2)",
+            "description": "通过串口连接的 KMBox 硬件设备",
+            "type": "Serial",
+            "serial": {
+                "port": "COM2",
+                "baudrate": 115200,
+                "timeout": 1.0
+            }
+        },
+        {
+            "name": "KMBox-Custom",
+            "label": "KMBox 自定义端口",
+            "description": "用户指定端口的 KMBox 设备",
+            "type": "Serial",
+            "serial": {
+                "port": "${PORT}",
+                "baudrate": 115200,
+                "timeout": 1.0
+            },
+            "option": [
+                {
+                    "name": "PORT",
+                    "label": "串口",
+                    "type": "text",
+                    "default": "COM3"
+                }
+            ]
+        }
+    ],
+
+    "resource": [
+        {
+            "name": "LostArk-KR-2560x1440",
+            "label": "失落的方舟 (韩服) - 2560x1440",
+            "description": "韩国服务器 2560x1440 分辨率资源",
+            "path": ["./assets/resource"],
+            "resolution": "2560x1440"
+        }
+    ],
+
+    "agent": [
+        {
+            "type": "python",
+            "entry": "agent/py_service/main.py",
+            "description": "Python 服务代理"
+        }
+    ],
+
+    "task": [
+        {
+            "name": "GuildDonation",
+            "label": "公会捐赠",
+            "description": "自动执行公会捐赠任务",
+            "entry": "GuildDonationMain",
+            "pipeline": "assets/resource/pipeline/guild_donation.json",
+            "option": [
+                {
+                    "name": "max_characters",
+                    "label": "最大角色数",
+                    "type": "number",
+                    "default": 21,
+                    "description": "最多处理的角色数量"
+                }
+            ]
+        },
+        {
+            "name": "CharacterSwitch",
+            "label": "角色切换",
+            "description": "自动切换角色",
+            "entry": "CharacterSwitchMain",
+            "pipeline": "assets/resource/pipeline/character_switch.json"
+        },
+        {
+            "name": "AccountIndexing",
+            "label": "账号索引",
+            "description": "扫描并索引账号",
+            "entry": "AccountIndexingMain",
+            "pipeline": "assets/resource/pipeline/account_indexing.json"
+        }
+    ],
+
+    "import": [
+        "assets/resource/pipeline/guild_donation.json",
+        "assets/resource/pipeline/character_switch.json",
+        "assets/resource/pipeline/account_indexing.json"
+    ]
+}
