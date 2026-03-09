@@ -155,17 +155,24 @@ class TemplateMatchHandler(RecognitionHandler):
         if context.screenshot is None:
             context.screenshot = context.vision_engine.get_screenshot()
 
+        # VisionEngine.find_element requires screenshot as first argument
         result = context.vision_engine.find_element(
+            context.screenshot,
             template_path=template,
             roi=tuple(roi) if roi else None,
             threshold=threshold
         )
 
-        matched = result is not None
-        score = 1.0 if matched else 0.0
+        # result is Tuple[bool, float, Tuple[int, int]]
+        if isinstance(result, tuple) and len(result) == 3:
+            matched, score, box = result
+        else:
+            matched = False
+            score = 0.0
+            box = None
 
-        print(f"[Recognition] TemplateMatch: {template} -> matched={matched}")
-        return matched, result, score
+        print(f"[Recognition] TemplateMatch: {template} -> matched={matched}, score={score:.2f}")
+        return matched, box, score
 
 
 class CustomRecognitionHandler(RecognitionHandler):
