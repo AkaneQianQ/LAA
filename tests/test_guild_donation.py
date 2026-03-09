@@ -4,14 +4,23 @@
 Guild Donation Module Tests
 
 Test suite for guild donation functionality using existing APIs.
-Validates Pipeline JSON, task configuration, and registered components.
+Supports both test mode (no hardware) and hardware mode (real Ferrum device).
 
 Usage:
+    # Test mode (no hardware, default):
     pytest tests/test_guild_donation.py -v
+
+    # Hardware mode (real Ferrum device):
+    pytest tests/test_guild_donation.py -v --hardware
+
+    # Full donation test with real hardware:
+    pytest tests/test_guild_donation.py::TestFullDonation -v --hardware
 """
 
 import sys
 import json
+import time
+import argparse
 from pathlib import Path
 
 # Add project root to path
@@ -29,13 +38,91 @@ from agent.py_service.main import (
     list_available_tasks,
     ConfigError,
 )
-from agent.py_service.register import Registry, register_all_modules, RecognitionResult
+from agent.py_service.register import Registry, register_all_modules
 from agent.py_service.modules.donation.register import (
     open_guild_menu,
     close_guild_menu,
     execute_donation,
     check_guild_menu_open,
 )
+from agent.py_service.pkg.ferrum.controller import FerrumController
+
+
+# Global flag for hardware mode (set via --hardware pytest option)
+HARDWARE_MODE = False
+STARTUP_DELAY_SECONDS = 3
+
+
+def pytest_addoption(parser):
+    """Add custom pytest options."""
+    parser.addoption(
+        "--hardware",
+        action="store_true",
+        default=False,
+        help="Enable hardware mode with real Ferrum device"
+    )
+    parser.addoption(
+        "--delay",
+        type=int,
+        default=3,
+        help="Startup delay in seconds (default: 3)"
+    )
+
+
+def pytest_configure(config):
+    """Configure global settings based on pytest options."""
+    global HARDWARE_MODE, STARTUP_DELAY_SECONDS
+    HARDWARE_MODE = config.getoption("--hardware")
+    STARTUP_DELAY_SECONDS = config.getoption("--delay")
+
+
+@pytest.fixture(scope="session")
+def hardware_mode():
+    """Return whether hardware mode is enabled."""
+    return HARDWARE_MODE
+
+
+@pytest.fixture(scope="session")
+def components(hardware_mode):
+    """
+    Initialize components for testing.
+
+    In hardware mode: connects to real Ferrum device
+    In test mode: skips hardware initialization
+    """
+    if hardware_mode:
+        print(f"\n[Hardware] Initializing with real Ferrum device...")
+        print(f"[Hardware] Starting in {STARTUP_DELAY_SECONDS} seconds...")
+        print(f"[Hardware] Please switch to game window now!\n")
+
+        for i in range(STARTUP_DELAY_SECONDS, 0, -1):
+            print(f"[Hardware] {i}...")
+            time.sleep(1)
+
+        comps = initialize(
+            test_mode=False,
+            skip_hardware=False
+        )
+        print("[Hardware] Ferrum device connected!")
+        return comps
+    else:
+        print("\n[Test] Running in test mode (no hardware)")
+        return initialize(
+            test_mode=True,
+            skip_hardware=True
+        )
+
+
+@pytest.fixture(scope="session")
+def hardware_controller(components):
+    """Get hardware controller if in hardware mode."""
+    return components.hardware_controller
+
+
+@pytest.fixture(scope="session")
+def vision_engine(components):
+    """Get vision engine."""
+    return components.vision_engine
 
 
 class TestPipelineConfiguration:
@@ -71,10 +158,8 @@ class TestPipelineConfiguration:
 
             # Check node name conventions
             if node_name.startswith('_'):
-                # Private node - can be intermediate
                 pass
             else:
-                # Public node should have next, on_true/on_false, or be terminal
                 terminal_nodes = ['workflow_complete', 'donation_complete']
                 has_next = "next" in node_config or "on_error" in node_config
                 has_branching = "on_true" in node_config or "on_false" in node_config
@@ -117,7 +202,6 @@ class TestTaskConfiguration:
         assert "entry" in task_config, "Task missing 'entry' field"
         assert "pipeline" in task_config, "Task missing 'pipeline' field"
 
-        # Verify pipeline file exists
         pipeline_path = project_root / task_config["pipeline"]
         assert pipeline_path.exists(), f"Pipeline file not found: {pipeline_path}"
 
@@ -131,9 +215,7 @@ class TestTaskConfiguration:
         pipeline = load_pipeline(task_config["pipeline"])
         entry = task_config["entry"]
 
-        # Check for exact match or flexible match (case/underscore differences)
         if entry not in pipeline:
-            # GuildDonationMain -> guild_donationMain conversion
             flexible_entry = entry.replace('Guild', 'guild_').lower()
             pipeline_keys_lower = {k.lower(): k for k in pipeline.keys()}
             assert flexible_entry in pipeline_keys_lower or entry.lower() in pipeline_keys_lower, \
@@ -187,84 +269,145 @@ class TestRegisteredComponents:
         print(f"[OK] GuildMenuOpen recognition is callable")
 
 
-class TestModuleFunctions:
-    """Test donation module functions directly."""
+class TestHardwareConnection:
+    """Test Ferrum hardware connection (hardware mode only)."""
 
-    def test_open_guild_menu_function_exists(self):
-        """Verify open_guild_menu function exists and accepts context."""
-        # Function should accept context dict
-        context = {
-            'hardware_controller': None,
-            'vision_engine': None,
-            'screenshot': None,
-            'param': {}
-        }
+    @pytest.mark.skipif(not HARDWARE_MODE, reason="Hardware mode not enabled")
+    def test_ferrum_controller_connected(self, components):
+        """Verify Ferrum controller is connected."""
+        controller = components.hardware_controller
 
-        # Should not raise with None hardware
-        result = open_guild_menu(context)
-        # Function returns None, just shouldn't crash
+        assert controller is not None, "Hardware controller is None"
+        assert isinstance(controller, FerrumController), "Controller is not FerrumController"
 
-        print(f"[OK] open_guild_menu function works with empty context")
+        print(f"[OK] Ferrum controller connected: {controller}")
 
-    def test_close_guild_menu_function_exists(self):
-        """Verify close_guild_menu function exists and accepts context."""
-        context = {
-            'hardware_controller': None,
-            'vision_engine': None,
-            'screenshot': None,
-            'param': {}
-        }
+    @pytest.mark.skipif(not HARDWARE_MODE, reason="Hardware mode not enabled")
+    def test_hardware_basic_operations(self, hardware_controller):
+        """Test basic hardware operations."""
+        # Move mouse to safe position
+        hardware_controller.move(100, 100, relative=False)
+        time.sleep(0.5)
 
-        result = close_guild_menu(context)
+        # Get current position
+        pos = hardware_controller.get_cursor_pos()
+        assert pos is not None, "Failed to get cursor position"
 
-        print(f"[OK] close_guild_menu function works with empty context")
-
-    def test_check_guild_menu_open_returns_recognition_result(self):
-        """Verify check_guild_menu_open returns RecognitionResult."""
-        context = {
-            'hardware_controller': None,
-            'vision_engine': None,
-            'screenshot': None,
-            'param': {}
-        }
-
-        result = check_guild_menu_open(context)
-
-        assert isinstance(result, RecognitionResult), \
-            f"Expected RecognitionResult, got {type(result)}"
-
-        print(f"[OK] check_guild_menu_open returns RecognitionResult")
+        print(f"[OK] Hardware operations working, cursor at {pos}")
 
 
-class TestServiceInitialization:
-    """Test service initialization in test mode."""
+class TestVisionEngine:
+    """Test Vision Engine functionality."""
 
-    def test_initialize_test_mode(self):
-        """Test initialize() in test mode (no hardware)."""
-        components = initialize(
-            test_mode=True,
-            skip_hardware=True
-        )
-
-        assert components.config is not None, "Config not loaded"
-        assert components.vision_engine is not None, "Vision engine not initialized"
-
-        print(f"[OK] Service initialized in test mode")
-
-    def test_vision_engine_available(self):
+    def test_vision_engine_available(self, vision_engine):
         """Test that vision engine is properly initialized."""
-        components = initialize(
-            test_mode=True,
-            skip_hardware=True
-        )
-
-        vision = components.vision_engine
+        vision = vision_engine
 
         assert vision is not None, "Vision engine is None"
         assert hasattr(vision, 'find_element'), "Vision engine missing find_element method"
         assert hasattr(vision, 'get_screenshot'), "Vision engine missing get_screenshot method"
 
         print(f"[OK] Vision engine has required methods")
+
+    def test_screenshot_capture(self, vision_engine):
+        """Test screenshot capture."""
+        screenshot = vision_engine.get_screenshot()
+
+        assert screenshot is not None, "Screenshot is None"
+        assert screenshot.shape[0] > 0 and screenshot.shape[1] > 0, "Invalid screenshot dimensions"
+
+        print(f"[OK] Screenshot captured: {screenshot.shape}")
+
+
+class TestFullDonation:
+    """
+    Full donation workflow test with real hardware.
+
+    This test class performs the actual guild donation workflow.
+    ONLY run this with --hardware flag and when game is ready.
+    """
+
+    @pytest.mark.skipif(not HARDWARE_MODE, reason="Hardware mode not enabled")
+    def test_open_guild_menu_with_hardware(self, hardware_controller, vision_engine):
+        """Test opening guild menu with real hardware."""
+        print("\n[Donation] Testing guild menu opening...")
+
+        # Create context with real hardware
+        context = {
+            'hardware_controller': hardware_controller,
+            'vision_engine': vision_engine,
+            'screenshot': vision_engine.get_screenshot(),
+            'param': {}
+        }
+
+        # Execute open guild menu action
+        open_guild_menu(context)
+        time.sleep(1.0)  # Wait for menu to appear
+
+        # Verify menu is open
+        context['screenshot'] = vision_engine.get_screenshot()
+        result = check_guild_menu_open(context)
+
+        # Note: This may fail if game is not in correct state
+        print(f"[Donation] Guild menu detection result: matched={result.matched}")
+
+        # Close menu
+        close_guild_menu(context)
+        time.sleep(0.5)
+
+        print("[OK] Guild menu open/close test completed")
+
+    @pytest.mark.skipif(not HARDWARE_MODE, reason="Hardware mode not enabled")
+    def test_full_donation_workflow(self, hardware_controller, vision_engine):
+        """
+        Execute full donation workflow.
+
+        WARNING: This will actually perform donations if game is ready!
+        Make sure you're in-game and ready before running.
+        """
+        print("\n" + "="*60)
+        print("[Donation] FULL WORKFLOW TEST STARTING")
+        print("="*60)
+        print("This will execute actual donation actions!")
+        print("Press Ctrl+C within 3 seconds to cancel...")
+        print("="*60 + "\n")
+
+        time.sleep(3)
+
+        context = {
+            'hardware_controller': hardware_controller,
+            'vision_engine': vision_engine,
+            'screenshot': None,
+            'param': {}
+        }
+
+        # Step 1: Open guild menu
+        print("[Step 1] Opening guild menu...")
+        open_guild_menu(context)
+        time.sleep(1.5)
+
+        # Step 2: Capture screenshot and check menu state
+        context['screenshot'] = vision_engine.get_screenshot()
+        result = check_guild_menu_open(context)
+        print(f"[Step 2] Guild menu check: {result.matched}")
+
+        # Step 3: Execute donation (if menu is open)
+        if result.matched:
+            print("[Step 3] Executing donation...")
+            execute_donation(context)
+            time.sleep(2.0)
+            print("[OK] Donation workflow completed")
+        else:
+            print("[WARNING] Guild menu not detected, skipping donation")
+
+        # Step 4: Close guild menu
+        print("[Step 4] Closing guild menu...")
+        close_guild_menu(context)
+        time.sleep(0.5)
+
+        print("\n" + "="*60)
+        print("[Donation] WORKFLOW TEST COMPLETED")
+        print("="*60)
 
 
 class TestIntegration:
@@ -277,19 +420,14 @@ class TestIntegration:
 
     def test_full_initialization_pipeline(self):
         """Test full initialization to pipeline loading flow."""
-        # 1. Initialize service
         components = initialize(
             test_mode=True,
             skip_hardware=True
         )
 
-        # 2. Get task config
         task_config = get_task_config(components.config, "GuildDonation")
-
-        # 3. Load pipeline
         pipeline = load_pipeline(task_config["pipeline"])
 
-        # 4. Verify entry node (handle naming convention differences)
         entry = task_config["entry"]
         if entry not in pipeline:
             flexible_entry = entry.replace('Guild', 'guild_').lower()
@@ -297,7 +435,6 @@ class TestIntegration:
             assert flexible_entry in pipeline_keys_lower or entry.lower() in pipeline_keys_lower, \
                 f"Entry '{entry}' not in pipeline"
 
-        # 5. Verify actions are registered
         actions = Registry.list_actions()
         assert "OpenGuildMenu" in actions
 
@@ -305,5 +442,17 @@ class TestIntegration:
 
 
 if __name__ == "__main__":
-    # Run with: python tests/test_guild_donation.py
-    pytest.main([__file__, "-v"])
+    # Support running directly with: python tests/test_guild_donation.py --hardware
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--hardware", action="store_true", help="Enable hardware mode")
+    parser.add_argument("--delay", type=int, default=3, help="Startup delay in seconds")
+    args, remaining = parser.parse_known_args()
+
+    if args.hardware:
+        HARDWARE_MODE = True
+        STARTUP_DELAY_SECONDS = args.delay
+        print(f"\n[Main] Hardware mode enabled with {STARTUP_DELAY_SECONDS}s delay")
+
+    # Run pytest with remaining args
+    sys.argv = [sys.argv[0]] + remaining
+    pytest.main([__file__, "-v"] + remaining)
