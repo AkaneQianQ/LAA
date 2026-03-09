@@ -10,7 +10,7 @@
 # - Recovery anchors for error rollback (ERR-02 compliance)
 
 name: guild_donation
-start_step_id: open_guild_menu
+start_step_id: move_mouse_safe_position
 
 wait_defaults:
   timeout_ms: 10000
@@ -18,6 +18,22 @@ wait_defaults:
   retry_interval_ms: 1000
 
 steps:
+  # Step 0: Move mouse to safe position to avoid blocking UI detection
+  # 将鼠标移至固定坐标，防止遮挡图像检测区域
+  - step_id: move_mouse_safe_position
+    action:
+      type: move
+      x: 536
+      y: 346
+    next: wait_after_move
+
+  # Step 0b: Brief wait after move to ensure mouse is positioned
+  - step_id: wait_after_move
+    action:
+      type: wait
+      duration_ms: 100
+    next: open_guild_menu
+
   # Step 1: Open guild menu with Alt+U
   # RECOVERY ANCHOR: Stable entry point for guild donation workflow
   - step_id: open_guild_menu
@@ -39,8 +55,9 @@ steps:
     action:
       type: wait_image
       state: appear
-      image: guild_ui.bmp
+      image: assets/guild_ui.bmp
       roi: [546, 803, 903, 835]
+      threshold: 0.7
       timeout_ms: 5000
       poll_interval_ms: 100
     next: check_first_confirm
@@ -80,7 +97,6 @@ steps:
   # Step 4: Stage 4 - Guild donation workflow
   # ROI: 1863,450,2019,483, 宽高(156,33)
   # Detect guild_first_donation.bmp and click
-  # y_offset: 0.33 限制点击区域，跳过上三分之一不可点击区域
   - step_id: stage4_first_donation
     action:
       type: click_detected
@@ -88,7 +104,6 @@ steps:
       roi: [1863, 450, 2019, 483]
       threshold: 0.8
       shrink_percent: 0.10
-      y_offset: 0.33
     next: stage4_second_donation
 
   # Step 4b: Second donation detection
@@ -101,6 +116,20 @@ steps:
       roi: [954, 702, 1077, 742]
       threshold: 0.8
       shrink_percent: 0.10
+    next: press_esc_after_stage4
+
+  # Step 4c: 按 ESC 关闭弹窗
+  - step_id: press_esc_after_stage4
+    action:
+      type: press
+      key_name: esc
+    next: wait_after_stage4
+
+  # Step 4d: 等待 UI 响应（50ms 延迟）
+  - step_id: wait_after_stage4
+    action:
+      type: wait
+      duration_ms: 50
     next: check_sec_donation
 
   # Step 5: Check for secondary donation (支援金捐献)
@@ -152,6 +181,13 @@ steps:
       roi: [1010, 602, 1253, 794]
       threshold: 0.7
       shrink_percent: 0.10
+    next: wait_after_sec_donation2
+
+  # Step 5c-delay: 等待 UI 响应（300ms 延迟）
+  - step_id: wait_after_sec_donation2
+    action:
+      type: wait
+      duration_ms: 50
     next: click_sec_donation2_fixed
 
   # Step 5d: Click at fixed position (1229, 937) with Y +/- 5px random
@@ -164,12 +200,53 @@ steps:
       random_y: 5
     next: donation_complete
 
-  # Step 5d: No support today - press ESC and exit
+  # Step 5d: No support today - press ESC and check UI closed
   - step_id: no_support_today
     action:
       type: press
       key_name: esc
-    next: null
+    next: wait_no_support_ui_close
+
+  # Step 5d-wait: Wait for UI to close after no support ESC
+  - step_id: wait_no_support_ui_close
+    action:
+      type: wait_image
+      state: disappear
+      image: assets/guild_ui.bmp
+      roi: [546, 803, 903, 835]
+      timeout_ms: 500
+      poll_interval_ms: 100
+    next: workflow_complete
+    recovery:
+      on_timeout: check_no_support_ui_closed
+      max_escalations: 10
+
+  # Step 5d-check: Check if UI still visible after no support ESC
+  - step_id: check_no_support_ui_closed
+    action:
+      type: wait
+      duration_ms: 200
+    on_true: final_esc_no_support
+    on_false: workflow_complete
+    condition:
+      type: image
+      template: assets/guild_ui.bmp
+      roi: [546, 803, 903, 835]
+      threshold: 0.75
+
+  # Step 5d-esc: Final ESC press if UI still visible (no support path)
+  - step_id: final_esc_no_support
+    action:
+      type: press
+      key_name: esc
+    next: wait_after_no_support_esc
+
+  # Step 5d-wait2: Wait UI response after ESC
+  - step_id: wait_after_no_support_esc
+    action:
+      type: wait
+      duration_ms: 300
+    next: check_no_support_ui_closed
 
   # Step 6: Donation complete
   - step_id: donation_complete
@@ -196,17 +273,19 @@ steps:
 
   # Step 6c: Wait for guild UI to close
   # Polls every 100ms with 500ms timeout
-  # If still detected after timeout, press ESC again
-  # If not detected, workflow completes successfully
+  # If timeout, go to check_ui_closed to determine next action
   - step_id: wait_guild_ui_close
     action:
       type: wait_image
       state: disappear
-      image: guild_ui.bmp
+      image: assets/guild_ui.bmp
       roi: [546, 803, 903, 835]
       timeout_ms: 500
       poll_interval_ms: 100
-    next: check_ui_closed
+    next: workflow_complete
+    recovery:
+      on_timeout: check_ui_closed
+      max_escalations: 10
 
   # Step 6d: Check if guild UI is still visible after ESC
   # If still detected (true), press ESC again
@@ -214,21 +293,29 @@ steps:
   - step_id: check_ui_closed
     action:
       type: wait
-      duration_ms: 50
+      duration_ms: 200
     on_true: final_esc_press
     on_false: workflow_complete
     condition:
       type: image
-      template: guild_ui.bmp
+      template: assets/guild_ui.bmp
       roi: [546, 803, 903, 835]
-      threshold: 0.8
+      threshold: 0.75
 
   # Step 6e: Final ESC press if UI still visible
+  # 按ESC后等待UI响应，再次检测
   - step_id: final_esc_press
     action:
       type: press
       key_name: esc
-    next: workflow_complete
+    next: wait_after_final_esc
+
+  # Step 6e-wait: 等待UI响应（300ms）
+  - step_id: wait_after_final_esc
+    action:
+      type: wait
+      duration_ms: 300
+    next: check_ui_closed
 
   # Step 7: Workflow complete
   # Final step after guild UI is confirmed closed

@@ -151,8 +151,21 @@ class WorkflowExecutor:
                 # Track last successfully executed step
                 last_executed_step_id = self.current_step_id
 
+                # Get current step for next resolution (may have changed due to recovery)
+                current_step = self.workflow.get_step(self.current_step_id)
+                if current_step is None:
+                    return ExecutionResult(
+                        success=False,
+                        steps_executed=self.steps_executed,
+                        final_step_id=last_executed_step_id,
+                        error=ExecutionError(
+                            f"Step '{self.current_step_id}' not found in workflow during next resolution"
+                        ),
+                        duration_ms=(time.time() - start_time) * 1000
+                    )
+
                 # Determine next step
-                self.current_step_id = self._resolve_next_step(step)
+                self.current_step_id = self._resolve_next_step(current_step)
 
             # Workflow completed successfully
             return ExecutionResult(
@@ -270,7 +283,26 @@ class WorkflowExecutor:
         if error_kind == ErrorKind.DISCONNECT:
             return False, RoleSkipError(f"Role skipped due to disconnect at step {step.step_id}")
 
-        # Determine recovery action
+        # Check if step has explicit on_timeout recovery configured
+        # For UI_TIMEOUT errors with on_timeout target, skip normal escalation and rollback immediately
+        has_on_timeout_target = (
+            hasattr(step, 'recovery') and
+            step.recovery and
+            step.recovery.on_timeout and
+            self.workflow.get_step(step.recovery.on_timeout)
+        )
+
+        if error_kind == ErrorKind.UI_TIMEOUT and has_on_timeout_target:
+            # Immediate L2 rollback for UI timeout with configured target
+            rollback_target = step.recovery.on_timeout
+            attempt_count = recovery_attempt + 1
+            print(f"[Recovery] Step '{step.step_id}' timeout, rollback to '{rollback_target}' (attempt {attempt_count})")
+            self.current_step_id = rollback_target
+            self._recovery_attempt_count[step_key] = attempt_count
+            # Return success to continue execution from rollback target
+            return True, None
+
+        # Determine recovery action via normal escalation
         action = self.orchestrator.determine_action(
             error_kind.value,
             step_key,
