@@ -299,7 +299,42 @@ Plans:
 5. ActionDispatcher successfully dispatches actions through the full chain
 6. Integration tests verify end-to-end functionality
 
+### Phase 8: 创建基于MXU框架的前端，兼容assets/tasks工作脚本并支持自动识别功能
+
+**Goal:** Create a frontend based on MXU (MaaFramework Next UI) framework that provides a graphical interface for the FerrumBot automation system. The frontend must be compatible with existing `assets/tasks/*.yaml` workflow scripts and support automatic recognition features for game window, hardware, and account identification.
+
+**Requirements:**
+- MXU-01: Frontend uses Tauri v2 + React 19 + TypeScript architecture
+- MXU-02: Frontend loads and parses interface.json configuration
+- MXU-03: Python service exposes WebSocket API for frontend communication
+- MXU-04: Auto-recognition detects Lost Ark game window automatically
+- MXU-05: Auto-recognition detects KMBox/Ferrum hardware on COM ports
+- MXU-06: Frontend connects to Python service via WebSocket through Tauri IPC
+- MXU-07: Task execution can be started/stopped from frontend UI
+- MXU-08: Real-time logs stream to frontend log viewer component
+
+**Depends on:** Phase 7
+**Plans:** 3 plans planned
+
+| Plan | Name | Wave | Depends On |
+|------|------|------|------------|
+| 08-01 | MXU Frontend Setup and Tauri Integration | 1 | - |
+| 08-02 | Python Service WebSocket API and Auto-Recognition | 1 | - |
+| 08-03 | Frontend-Backend Integration and Task Execution | 2 | 08-01, 08-02 |
+
+**Wave Structure:**
+- **Wave 1 (Parallel):** Plan 08-01 (Frontend Setup), Plan 08-02 (WebSocket API)
+- **Wave 2 (Sequential):** Plan 08-03 (Integration) - depends on Wave 1
+
+**Success Criteria:**
+1. MXU frontend project builds successfully with Tauri v2 + React 19
+2. Frontend displays task list from interface.json with Chinese labels
+3. Python service WebSocket server accepts connections on port 8765
+4. Auto-detection finds Lost Ark window, KMBox hardware, and identifies account
+5. Frontend can start/stop tasks and view real-time execution logs
+6. Dark theme and Chinese language are defaults
+
 ---
 
 *Roadmap created: 2026-03-07*
-*Updated: 2026-03-08 with Phase 7 plans*
+*Updated: 2026-03-09 with Phase 8 plans*
