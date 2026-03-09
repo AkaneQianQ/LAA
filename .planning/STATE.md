@@ -210,7 +210,7 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 | 6 | MAA Refactor Phase 1 - 目录结构重组为 MaaEnd 风格 | 2026-03-09 | aa35040 | [6-maa-refactor-phase1](./quick/6-maa-refactor-phase1/) |
 | 7 | MAA Refactor Phase 2 - 完成 MaaEnd 结构重构 | 2026-03-09 | 63a0462 | [7-maa-refactor-phase2](./quick/7-maa-refactor-phase2/) |
 | 8 | 创建 FerrumBot 服务入口 agent/py_service/main.py | 2026-03-09 | a73b511 | [8-ferrumbot-agent-py-service-main-py](./quick/8-ferrumbot-agent-py-service-main-py/) |
-| 9 | 为 guild_donation 生成 test.py，使用现有 API 走完整流程 | 2026-03-09 | TBD | [9-guild-donation-test-py-api](./quick/9-guild-donation-test-py-api/) |
+| 9 | 为 guild_donation 生成 test.py，使用现有 API 走完整流程 | 2026-03-09 | 9bb984c | [9-guild-donation-test-py-api](./quick/9-guild-donation-test-py-api/) |
 
 ## Accumulated Context
 
