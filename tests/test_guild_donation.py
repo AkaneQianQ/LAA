@@ -3,10 +3,12 @@
 """
 Guild Donation Full Workflow Test
 
-执行完整的公会捐献流程测试，包括：
-1. 3秒延迟等待切换游戏窗口
-2. 初始化 Ferrum 硬件
-3. 执行公会捐献 JSON Pipeline 流程
+执行完整的公会捐献流程测试，使用 Pipeline Executor 自动执行 YAML 定义的工作流。
+
+Features:
+- 模块化架构：Pipeline Executor 解析并执行 JSON 节点
+- YAML/JSON 工作流：人工编写 YAML，自动转换为 Pipeline JSON
+- 自动执行：调用所有 API 完成捐献流程
 
 Usage:
     pytest tests/test_guild_donation.py -v              # 测试模式
@@ -34,14 +36,12 @@ from agent.py_service.main import (
     load_pipeline,
     initialize,
 )
-from agent.py_service.register import Registry, register_all_modules
-from agent.py_service.modules.donation.register import (
-    open_guild_menu,
-    close_guild_menu,
-    execute_donation,
-    check_guild_menu_open,
+from agent.py_service.register import register_all_modules
+from agent.py_service.modules.workflow_executor.executor import create_executor, execute_pipeline
+from agent.py_service.pkg.workflow.pipeline_executor import (
+    ExecutionContext,
+    create_executor_with_defaults,
 )
-from agent.py_service.pkg.ferrum.controller import FerrumController
 
 
 @pytest.fixture(scope="session")
@@ -78,8 +78,8 @@ def vision_engine(components):
     return components.vision_engine
 
 
-class TestGuildDonationPipeline:
-    """Guild Donation Pipeline JSON Validation and Execution."""
+class TestPipelineValidation:
+    """Pipeline JSON 验证测试."""
 
     def test_pipeline_json_valid(self):
         """验证 guild_donation.json 格式正确."""
@@ -92,7 +92,7 @@ class TestGuildDonationPipeline:
         assert len(pipeline) > 0, "Pipeline must contain at least one node"
         assert "guild_donationMain" in pipeline, "Pipeline must have guild_donationMain entry"
 
-        print(f"[OK] Pipeline JSON valid: {len(pipeline)} nodes")
+        print(f"\n[OK] Pipeline JSON valid: {len(pipeline)} nodes")
 
         # 打印所有节点名供检查
         print("[INFO] Pipeline nodes:")
@@ -102,6 +102,46 @@ class TestGuildDonationPipeline:
             action = node.get('action', {}).get('type', 'None')
             recognition = node.get('recognition', {}).get('type', 'None')
             print(f"  - {node_name}: action={action}, recognition={recognition}, next={next_nodes}")
+
+    def test_pipeline_nodes_have_handlers(self):
+        """验证所有 Pipeline 节点类型都有对应的 Handler."""
+        from agent.py_service.pkg.workflow.pipeline_executor import (
+            KeyPressHandler, ClickHandler, WaitHandler, TemplateMatchHandler
+        )
+
+        pipeline_path = project_root / "assets" / "resource" / "pipeline" / "guild_donation.json"
+        with open(pipeline_path, 'r', encoding='utf-8') as f:
+            pipeline = json.load(f)
+
+        # 检查支持的 handlers
+        action_handlers = {
+            'KeyPress': KeyPressHandler(),
+            'Click': ClickHandler(),
+            'Wait': WaitHandler(),
+        }
+        recognition_handlers = {
+            'TemplateMatch': TemplateMatchHandler(),
+        }
+
+        missing_handlers = []
+
+        for node_name, node in pipeline.items():
+            # Check action handlers
+            if 'action' in node:
+                action_type = node['action'].get('type', '')
+                if action_type and action_type not in action_handlers and action_type != 'Custom':
+                    missing_handlers.append(f"{node_name}: action={action_type}")
+
+            # Check recognition handlers
+            if 'recognition' in node:
+                rec_type = node['recognition'].get('type', '')
+                if rec_type and rec_type not in recognition_handlers and rec_type != 'Custom':
+                    missing_handlers.append(f"{node_name}: recognition={rec_type}")
+
+        if missing_handlers:
+            print(f"\n[WARNING] Missing handlers: {missing_handlers}")
+        else:
+            print(f"\n[OK] All {len(pipeline)} nodes have registered handlers")
 
     def test_task_config_matches_pipeline(self):
         """验证 interface.json 配置与 Pipeline 匹配."""
@@ -116,67 +156,76 @@ class TestGuildDonationPipeline:
         assert entry_in_pipeline, f"Entry node '{entry}' not found in pipeline"
         print(f"[OK] Task config valid: entry='{entry}' matches pipeline")
 
+
+class TestPipelineExecutor:
+    """Pipeline Executor 功能测试."""
+
+    def test_executor_creation(self):
+        """测试 PipelineExecutor 创建."""
+        register_all_modules()
+
+        pipeline_path = project_root / "assets" / "resource" / "pipeline" / "guild_donation.json"
+        executor = create_executor(pipeline_path)
+
+        assert executor is not None
+        assert executor.pipeline is not None
+        print(f"[OK] PipelineExecutor created with {len(executor.pipeline)} nodes")
+
+    def test_executor_context_creation(self, vision_engine):
+        """测试 ExecutionContext 创建."""
+        context = ExecutionContext(
+            hardware_controller=None,
+            vision_engine=vision_engine,
+            screenshot=None,
+            param={}
+        )
+
+        assert context.vision_engine is not None
+        print("[OK] ExecutionContext created")
+
+
+class TestFullDonationWorkflow:
+    """完整捐献流程测试（硬件模式）."""
+
     @pytest.mark.skipif(not HARDWARE_MODE, reason="Hardware mode not enabled")
-    def test_full_donation_workflow(self, hardware_controller, vision_engine):
+    def test_execute_full_pipeline(self, hardware_controller, vision_engine):
         """
-        执行完整公会捐献流程.
+        执行完整公会捐献 Pipeline.
 
-        此测试会实际执行:
-        1. 打开公会菜单 (Alt+U)
-        2. 检测菜单是否打开
-        3. 执行捐献流程
-        4. 关闭菜单
-
-        ⚠️ 需要游戏窗口已打开且角色在游戏中
+        使用 Pipeline Executor 自动执行 JSON 定义的所有节点：
+        1. move_mouse_safe_position
+        2. wait_after_move
+        3. open_guild_menu (Alt+U)
+        4. wait_menu_appear
+        5. stage4_first_donation (点击捐献)
+        6. stage4_second_donation
+        7. donation_complete
+        8. workflow_complete
         """
         print("\n" + "="*60)
-        print("[Donation] 公会捐献流程测试开始")
+        print("[Donation] Pipeline Executor 测试开始")
         print("="*60)
 
         if not hardware_controller:
             pytest.skip("Hardware controller not available")
 
-        # 注册模块
+        # 注册所有模块
         register_all_modules()
 
-        # 创建执行上下文
-        context = {
-            'hardware_controller': hardware_controller,
-            'vision_engine': vision_engine,
-            'screenshot': None,
-            'param': {}
-        }
-
-        # Step 1: 打开公会菜单
-        print("\n[Step 1] 打开公会菜单 (Alt+U)...")
-        open_guild_menu(context)
-        time.sleep(1.5)
-
-        # Step 2: 截图检测菜单状态
-        print("[Step 2] 检测公会菜单状态...")
-        context['screenshot'] = vision_engine.get_screenshot()
-        result = check_guild_menu_open(context)
-        print(f"[INFO] 公会菜单检测结果: matched={result.matched}, score={result.score}")
-
-        if result.matched:
-            print("[OK] 公会菜单已打开")
-
-            # Step 3: 执行捐献
-            print("\n[Step 3] 执行捐献...")
-            execute_donation(context)
-            time.sleep(2.0)
-            print("[OK] 捐献执行完成")
-        else:
-            print("[WARNING] 公会菜单未检测到，跳过捐献步骤")
-
-        # Step 4: 关闭菜单
-        print("\n[Step 4] 关闭公会菜单 (ESC)...")
-        close_guild_menu(context)
-        time.sleep(0.5)
+        # 执行完整 Pipeline
+        success = execute_pipeline(
+            pipeline_path=Path("assets/resource/pipeline/guild_donation.json"),
+            entry_node="guild_donationMain",
+            hardware_controller=hardware_controller,
+            vision_engine=vision_engine,
+            timeout_seconds=60.0
+        )
 
         print("\n" + "="*60)
-        print("[Donation] 公会捐献流程测试完成")
+        print(f"[Donation] Pipeline Executor 测试完成: {'SUCCESS' if success else 'FAILED'}")
         print("="*60)
+
+        assert success, "Pipeline execution failed"
 
 
 if __name__ == "__main__":

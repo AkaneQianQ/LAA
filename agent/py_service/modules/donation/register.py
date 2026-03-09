@@ -4,16 +4,24 @@
 Donation Module Registration
 
 Registers guild donation actions with the global registry.
-Note: Workflow implementation will be migrated from legacy guild_donation.py
+Uses Pipeline Executor for modular workflow execution.
 """
 
+from pathlib import Path
 from ...register import action, recognition, RecognitionResult
+
+
+# Pipeline path
+PIPELINE_PATH = Path("assets/resource/pipeline/guild_donation.json")
 
 
 @action("ExecuteDonation")
 def execute_donation(context: dict):
     """
-    Execute a single guild donation.
+    Execute full guild donation workflow using Pipeline Executor.
+
+    This action loads and executes the complete guild_donation.json pipeline,
+    including all steps: open menu, detect UI, click donations, close UI.
 
     Usage in Pipeline JSON:
     {
@@ -26,18 +34,26 @@ def execute_donation(context: dict):
     hardware = context.get('hardware_controller')
     vision = context.get('vision_engine')
 
-    # TODO: Migrate full donation workflow from legacy implementation
-    # For now, this is a placeholder that will be extended
+    if not hardware or not vision:
+        print("[Donation] Error: Hardware or Vision not available")
+        return
 
-    if hardware and vision:
-        print("[Donation] Executing donation workflow...")
-        # Legacy steps:
-        # 1. Open ESC menu (Alt+U or ESC + click)
-        # 2. Click guild button
-        # 3. Click donation tab
-        # 4. Execute silver donation
-        # 5. Confirm donation
-        # 6. Close UI
+    # Import here to avoid circular dependencies
+    from ...modules.workflow_executor.executor import execute_pipeline
+
+    # Execute the full pipeline
+    success = execute_pipeline(
+        pipeline_path=PIPELINE_PATH,
+        entry_node="guild_donationMain",
+        hardware_controller=hardware,
+        vision_engine=vision,
+        timeout_seconds=60.0
+    )
+
+    if success:
+        print("[Donation] Workflow completed successfully")
+    else:
+        print("[Donation] Workflow failed or timed out")
 
 
 @action("OpenGuildMenu")
@@ -55,8 +71,8 @@ def open_guild_menu(context: dict):
     """
     hardware = context.get('hardware_controller')
     if hardware:
-        # Alt+U shortcut for guild menu
         hardware.press('alt+u')
+        print("[Action] OpenGuildMenu: Alt+U pressed")
 
 
 @action("CloseGuildMenu")
@@ -75,6 +91,7 @@ def close_guild_menu(context: dict):
     hardware = context.get('hardware_controller')
     if hardware:
         hardware.press('esc')
+        print("[Action] CloseGuildMenu: ESC pressed")
 
 
 @recognition("GuildMenuOpen")
