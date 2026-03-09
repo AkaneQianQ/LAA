@@ -56,7 +56,7 @@ def open_guild_menu(context: dict):
     hardware = context.get('hardware_controller')
     if hardware:
         # Alt+U shortcut for guild menu
-        hardware.press_key('alt+u')
+        hardware.press('alt+u')
 
 
 @action("CloseGuildMenu")
@@ -74,7 +74,7 @@ def close_guild_menu(context: dict):
     """
     hardware = context.get('hardware_controller')
     if hardware:
-        hardware.press_key('esc')
+        hardware.press('esc')
 
 
 @recognition("GuildMenuOpen")

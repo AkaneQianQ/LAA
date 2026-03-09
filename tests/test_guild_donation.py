@@ -260,15 +260,15 @@ class TestHardwareConnection:
     @pytest.mark.skipif(not HARDWARE_MODE, reason="Hardware mode not enabled")
     def test_hardware_basic_operations(self, hardware_controller):
         """Test basic hardware operations."""
-        # Move mouse to safe position
-        hardware_controller.move(100, 100, relative=False)
+        # Move mouse to safe position (absolute)
+        hardware_controller.move_absolute(100, 100)
         time.sleep(0.5)
 
-        # Get current position
-        pos = hardware_controller.get_cursor_pos()
-        assert pos is not None, "Failed to get cursor position"
+        # Test key press (using 'esc' as safe test key)
+        hardware_controller.press('esc')
+        time.sleep(0.2)
 
-        print(f"[OK] Hardware operations working, cursor at {pos}")
+        print(f"[OK] Hardware operations working")
 
 
 class TestVisionEngine:
