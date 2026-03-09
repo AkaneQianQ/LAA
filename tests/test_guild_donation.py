@@ -29,6 +29,9 @@ sys.path.insert(0, str(project_root))
 
 import pytest
 
+# Import conftest globals
+from conftest import HARDWARE_MODE, STARTUP_DELAY_SECONDS
+
 # Import existing APIs - no reinventing
 from agent.py_service.main import (
     load_interface_config,
@@ -46,34 +49,6 @@ from agent.py_service.modules.donation.register import (
     check_guild_menu_open,
 )
 from agent.py_service.pkg.ferrum.controller import FerrumController
-
-
-# Global flag for hardware mode (set via --hardware pytest option)
-HARDWARE_MODE = False
-STARTUP_DELAY_SECONDS = 3
-
-
-def pytest_addoption(parser):
-    """Add custom pytest options."""
-    parser.addoption(
-        "--hardware",
-        action="store_true",
-        default=False,
-        help="Enable hardware mode with real Ferrum device"
-    )
-    parser.addoption(
-        "--delay",
-        type=int,
-        default=3,
-        help="Startup delay in seconds (default: 3)"
-    )
-
-
-def pytest_configure(config):
-    """Configure global settings based on pytest options."""
-    global HARDWARE_MODE, STARTUP_DELAY_SECONDS
-    HARDWARE_MODE = config.getoption("--hardware")
-    STARTUP_DELAY_SECONDS = config.getoption("--delay")
 
 
 @pytest.fixture(scope="session")
@@ -442,16 +417,17 @@ class TestIntegration:
 
 
 if __name__ == "__main__":
-    # Support running directly with: python tests/test_guild_donation.py --hardware
+    # When running directly, use argparse instead of pytest options
     parser = argparse.ArgumentParser()
     parser.add_argument("--hardware", action="store_true", help="Enable hardware mode")
     parser.add_argument("--delay", type=int, default=3, help="Startup delay in seconds")
     args, remaining = parser.parse_known_args()
 
+    # Note: Direct run mode doesn't use conftest.py, so we set global flags here
+    # but they won't affect skipif decorators (those need pytest -c conftest.py)
     if args.hardware:
-        HARDWARE_MODE = True
-        STARTUP_DELAY_SECONDS = args.delay
-        print(f"\n[Main] Hardware mode enabled with {STARTUP_DELAY_SECONDS}s delay")
+        print(f"\n[Main] Direct run mode - hardware flag detected")
+        print(f"[Main] Use 'pytest {__file__} -v --hardware' for full hardware mode")
 
     # Run pytest with remaining args
     sys.argv = [sys.argv[0]] + remaining
