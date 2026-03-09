@@ -15,10 +15,11 @@
 | Pipeline JSON | �� 完成 | 100% | 转换工具 + JSON 文件 |
 | 注册系统 | �� 完成 | 100% | 所有模块已注册 |
 | 兼容层 | �� 完成 | 100% | __init__.py 转发已更新 |
-| 旧文件清理 | �� 完成 | 100% | core/ 已清理 |
-| 文档 | �� 完成 | 100% | 规划文档完整 |
+| 旧文件清理 | ✅ 完成 | 100% | core/ 已清理 |
+| 文档 | ✅ 完成 | 100% | 规划文档完整 |
+| 服务入口 | ✅ 完成 | 100% | agent/py_service/main.py |
 
-**总体进度**: ~95%
+**总体进度**: ~100%
 
 ---
 
@@ -29,6 +30,7 @@
 #### ✅ 已完成
 ```
 agent/py_service/              # [重命名] py-service -> py_service
+├── main.py                    # [新建] 服务入口
 ├── register.py                # 组件注册表 [112 行]
 ├── pkg/                       # 共享包 [4,500+ 行代码]
 │   ├── ferrum/
@@ -161,12 +163,9 @@ agent/py_service/              # [重命名] py-service -> py_service
 
 ### 可选增强 (低优先级)
 
-1. **创建服务入口** `agent/py_service/main.py`
-   - 加载 interface.json
-   - 初始化控制器和视觉引擎
-   - 启动主服务循环
-
-2. **创建 Pipeline JSON 执行器**
+1. **Pipeline JSON 执行器增强**
+   - 当前 main.py 提供基础框架
+   - 可进一步增强完整的 Pipeline 节点执行
    - 专门执行 MaaEnd 风格 JSON Pipeline
    - 支持 `recognition` + `action` 组合节点
 

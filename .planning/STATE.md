@@ -209,6 +209,7 @@ See: [.planning/PROJECT.md](PROJECT.md) (updated 2026-03-07)
 | 5 | 创建account_indexing Step0的测试脚本test1，截屏输出图片并自动清理缓存 | 2026-03-08 | e5bb448 | [5-account-indexing-step0-test1](./quick/5-account-indexing-step0-test1/) |
 | 6 | MAA Refactor Phase 1 - 目录结构重组为 MaaEnd 风格 | 2026-03-09 | aa35040 | [6-maa-refactor-phase1](./quick/6-maa-refactor-phase1/) |
 | 7 | MAA Refactor Phase 2 - 完成 MaaEnd 结构重构 | 2026-03-09 | 63a0462 | [7-maa-refactor-phase2](./quick/7-maa-refactor-phase2/) |
+| 8 | 创建 FerrumBot 服务入口 agent/py_service/main.py | 2026-03-09 | TBD | [8-ferrumbot-agent-py-service-main-py](./quick/8-ferrumbot-agent-py-service-main-py/) |
 
 ## Accumulated Context
 
