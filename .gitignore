@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+build/
+dist/
+dist_refresh/
+
+data/ui_settings.json
+
+logs/debug/
+logs/*.log
+
+.claude/settings.local.json

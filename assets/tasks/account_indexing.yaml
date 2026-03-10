@@ -1,15 +1,9 @@
-# Account Indexing Workflow - Step 0 Implementation
-# Performs ESC menu -> wait -> capture account tag -> match/create account
-#
-# This workflow:
-# - Opens ESC menu on character selection screen
-# - Waits 200ms for UI stabilization
-# - Captures account tag ROI (666, 793, 772, 902)
-# - Uses perceptual hash to match against existing accounts
-# - Creates new account if no match found
+# Account Indexing Workflow
+# Follows MAA-style declarative steps; backend only provides custom recognizers/actions.
+# Flow aligned with confirmed 11-step process.
 
 name: account_indexing
-start_step_id: open_esc_menu
+start_step_id: press_esc_first
 
 wait_defaults:
   timeout_ms: 10000
@@ -17,38 +11,282 @@ wait_defaults:
   retry_interval_ms: 1000
 
 steps:
-  # Step 0: Open ESC menu
-  - step_id: open_esc_menu
+  # Step 1: ESC first attempt
+  - step_id: press_esc_first
     action:
       type: press
       key_name: esc
-    next: wait_after_esc
+    next: wait_after_first_esc
 
-  # Step 1: Wait 200ms for UI stabilization
-  - step_id: wait_after_esc
+  - step_id: wait_after_first_esc
+    action:
+      type: wait
+      duration_ms: 120
+    next: detect_switch_after_first_esc
+
+  # Step 1 detect: switchCharacter.bmp in ROI (timeout 1000ms)
+  - step_id: detect_switch_after_first_esc
+    recognition:
+      type: custom
+      custom_recognition: SwitchCharacterVisible
+      param:
+        template: assets/resource/image/switchCharacter.bmp
+        roi: [575, 907, 856, 952]
+        threshold: 0.75
+        timeout_ms: 1400
+        poll_interval_ms: 100
+    on_true: wait_before_resolve_account_tag
+    on_false: recheck_switch_before_second_esc
+
+  # 防止首轮误判：在发送第二次 ESC 前先复检一次
+  - step_id: recheck_switch_before_second_esc
+    recognition:
+      type: custom
+      custom_recognition: SwitchCharacterVisible
+      param:
+        template: assets/resource/image/switchCharacter.bmp
+        roi: [575, 907, 856, 952]
+        threshold: 0.72
+        timeout_ms: 800
+        poll_interval_ms: 100
+    on_true: wait_before_resolve_account_tag
+    on_false: press_esc_second
+
+  # Step 2: ESC second attempt
+  - step_id: press_esc_second
+    action:
+      type: press
+      key_name: esc
+    next: wait_after_second_esc
+
+  - step_id: wait_after_second_esc
+    action:
+      type: wait
+      duration_ms: 120
+    next: detect_switch_after_second_esc
+
+  # Step 2 detect: second failure exits
+  - step_id: detect_switch_after_second_esc
+    recognition:
+      type: custom
+      custom_recognition: SwitchCharacterVisible
+      param:
+        template: assets/resource/image/switchCharacter.bmp
+        roi: [575, 907, 856, 952]
+        threshold: 0.75
+        timeout_ms: 1400
+        poll_interval_ms: 100
+    on_true: wait_before_resolve_account_tag
+    on_false: workflow_complete
+
+  - step_id: wait_before_resolve_account_tag
     action:
       type: wait
       duration_ms: 200
-    next: capture_account_tag
+    next: resolve_account_tag
 
-  # Step 2: Capture account tag ROI
-  # ROI: (666, 793, 772, 902) - account identification area
-  - step_id: capture_account_tag
+  # Step 3-4: account tag resolve (existing -> finish, new -> step 5)
+  - step_id: resolve_account_tag
+    recognition:
+      type: custom
+      custom_recognition: ResolveAccountByTag
+      param:
+        roi: [666, 793, 772, 902]
+        phash_threshold: 10
+        db_path: data/accounts.db
+        data_dir: data
+        staging_mode: true
+    on_true: click_switch_character
+    on_false: click_switch_character
+
+  # Step 5: click switch area with 10% safe shrink
+  - step_id: click_switch_character
     action:
-      type: capture_roi
-      roi: [666, 793, 772, 902]
-      output_key: account_tag_image
-    next: match_or_create_account
+      type: click_detected
+      image: assets/resource/image/switchCharacter.bmp
+      roi: [575, 907, 856, 952]
+      threshold: 0.8
+      timeout_ms: 1000
+      poll_interval_ms: 100
+      shrink_percent: 0.10
+    next: wait_after_switch_click
 
-  # Step 3: Match against existing accounts or create new
-  # This is a conditional step handled by the executor
-  - step_id: match_or_create_account
+  - step_id: wait_after_switch_click
     action:
       type: wait
-      duration_ms: 100
+      duration_ms: 450
+    next: record_first_page
+
+  # Step 6: first page record (skip 1-1 due to selected overlay)
+  - step_id: record_first_page
+    action:
+      type: custom
+      custom_action: RecordVisibleCharacters
+      param:
+        staging_mode: true
+        skip_first_slot: true
+        only_occupied: true
+        dedupe: true
+        occupancy_mode: anchor_color
+        anchor_rgb: [101, 96, 70]
+        anchor_tolerance: 6
+        anchor_min_pixels: 1
+        anchor_min_ratio: 0.0
+        dedupe_similarity_threshold: 0.995
+        dedupe_mad_threshold: 4.0
+        dedupe_center_similarity_threshold: 0.995
+        dedupe_center_mad_threshold: 4.0
+        dedupe_max_shift: 3
+        dedupe_text_hamming_threshold: 6
+        dedupe_center_hamming_threshold: 6
+        dedupe_fusion_threshold: 0.97
+    next: detect_incomplete_first_page
+
+  - step_id: detect_incomplete_first_page
+    recognition:
+      type: custom
+      custom_recognition: FirstPageIncomplete
+      param:
+        occupancy_mode: anchor_color
+        anchor_rgb: [101, 96, 70]
+        anchor_tolerance: 6
+        anchor_min_pixels: 1
+        anchor_min_ratio: 0.0
+    on_true: finalize_account_index
+    on_false: move_scroll_anchor
+
+  # Step 7: move to scroll anchor and scroll
+  - step_id: move_scroll_anchor
+    action:
+      type: move
+      x: 1689
+      y: 702
+    next: wait_after_move_scroll_anchor
+
+  - step_id: wait_after_move_scroll_anchor
+    action:
+      type: wait
+      duration_ms: 200
+    next: scroll_down_three_ticks
+
+  - step_id: scroll_down_three_ticks
+    action:
+      type: scroll
+      direction: down
+      ticks: 1
+    next: detect_bottom_after_scroll
+
+  # Step 8/9: bottom branch
+  - step_id: detect_bottom_after_scroll
+    recognition:
+      type: custom
+      custom_recognition: BottomReached
+      param:
+        template: assets/resource/image/Buttom.bmp
+        roi: [1682, 815, 1698, 861]
+        threshold: 0.95
+    on_true: record_bottom_page
+    on_false: record_non_bottom_page
+
+  # Step 10: non-bottom page continue and loop to step 7
+  - step_id: record_non_bottom_page
+    action:
+      type: custom
+      custom_action: RecordVisibleCharacters
+      param:
+        staging_mode: true
+        skip_first_slot: false
+        only_occupied: true
+        dedupe: true
+        occupancy_mode: anchor_color
+        anchor_rgb: [101, 96, 70]
+        anchor_tolerance: 6
+        anchor_min_pixels: 1
+        anchor_min_ratio: 0.0
+        dedupe_similarity_threshold: 0.995
+        dedupe_mad_threshold: 4.0
+        dedupe_center_similarity_threshold: 0.995
+        dedupe_center_mad_threshold: 4.0
+        dedupe_max_shift: 3
+        dedupe_text_hamming_threshold: 6
+        dedupe_center_hamming_threshold: 6
+        dedupe_fusion_threshold: 0.97
+    next: increment_scroll_loop
+
+  - step_id: increment_scroll_loop
+    action:
+      type: custom
+      custom_action: IncrementScrollLoop
+    next: check_scroll_loop_limit
+
+  - step_id: check_scroll_loop_limit
+    recognition:
+      type: custom
+      custom_recognition: ScrollLoopExceeded
+      param:
+        max_loops: 8
+    on_true: finalize_account_index
+    on_false: move_scroll_anchor
+
+  # Step 11: bottom page final pass with dedupe, then finalize
+  - step_id: record_bottom_page
+    action:
+      type: custom
+      custom_action: RecordVisibleCharacters
+      param:
+        staging_mode: true
+        skip_first_slot: false
+        only_occupied: true
+        dedupe: true
+        occupancy_mode: anchor_color
+        anchor_rgb: [101, 96, 70]
+        anchor_tolerance: 6
+        anchor_min_pixels: 1
+        anchor_min_ratio: 0.0
+        dedupe_similarity_threshold: 0.995
+        dedupe_mad_threshold: 4.0
+        dedupe_center_similarity_threshold: 0.995
+        dedupe_center_mad_threshold: 4.0
+        dedupe_max_shift: 3
+        dedupe_text_hamming_threshold: 6
+        dedupe_center_hamming_threshold: 6
+        dedupe_fusion_threshold: 0.97
+    next: finalize_account_index
+
+  - step_id: finalize_account_index
+    action:
+      type: custom
+      custom_action: FinalizeAccountIndex
+      param:
+        db_path: data/accounts.db
+        data_dir: data
+        staging_mode: true
+    next: press_esc_finalize_first
+
+  - step_id: press_esc_finalize_first
+    action:
+      type: press
+      key_name: esc
+    next: wait_after_finalize_esc_first
+
+  - step_id: wait_after_finalize_esc_first
+    action:
+      type: wait
+      duration_ms: 180
+    next: press_esc_finalize_second
+
+  - step_id: press_esc_finalize_second
+    action:
+      type: press
+      key_name: esc
+    next: wait_after_finalize_esc_second
+
+  - step_id: wait_after_finalize_esc_second
+    action:
+      type: wait
+      duration_ms: 180
     next: workflow_complete
 
-  # Step 4: Workflow complete
   - step_id: workflow_complete
     action:
       type: wait

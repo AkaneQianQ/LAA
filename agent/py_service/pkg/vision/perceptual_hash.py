@@ -13,14 +13,6 @@ Exports:
     compute_phash_from_roi: Compute hash directly from screenshot ROI
 """
 
-import sys
-import io
-
-# Fix Windows console encoding for Chinese output
-if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
-
 import os
 from typing import Optional, Tuple, Union, List, Dict, Any
 import numpy as np
@@ -42,6 +34,45 @@ import cv2
 # PERCEPTUAL HASH FUNCTIONS
 # =============================================================================
 
+def _compute_phash_cv(image_bgr: np.ndarray) -> Optional[str]:
+    """
+    Compute 64-bit pHash using OpenCV + DCT (dependency-free fallback).
+    """
+    try:
+        if image_bgr is None or image_bgr.size == 0:
+            return None
+
+        if len(image_bgr.shape) == 3:
+            gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = image_bgr
+
+        resized = cv2.resize(gray, (32, 32), interpolation=cv2.INTER_AREA)
+        dct = cv2.dct(np.float32(resized))
+        dct_low = dct[:8, :8]
+
+        # Exclude DC component from median to reduce illumination bias.
+        flat = dct_low.flatten()
+        median = np.median(flat[1:])
+        bits = (flat > median).astype(np.uint8)
+
+        value = 0
+        for bit in bits:
+            value = (value << 1) | int(bit)
+        return f"{value:016x}"
+    except Exception as e:
+        print(f"[ERROR] Failed to compute OpenCV pHash: {e}")
+        return None
+
+
+def _hamming_distance_hex(hash1: str, hash2: str) -> int:
+    try:
+        a = int(hash1, 16)
+        b = int(hash2, 16)
+        return (a ^ b).bit_count()
+    except Exception:
+        return 64
+
 def compute_phash(image_source: Union[str, np.ndarray]) -> Optional[str]:
     """
     计算图像的感知哈希值 (pHash)。
@@ -52,35 +83,33 @@ def compute_phash(image_source: Union[str, np.ndarray]) -> Optional[str]:
     Returns:
         64位哈希字符串 (16进制，16字符)，失败返回None
     """
-    if imagehash is None:
-        print("[ERROR] imagehash library not installed. Run: pip install imagehash")
-        return None
-
-    if Image is None:
-        print("[ERROR] PIL (Pillow) library not installed. Run: pip install Pillow")
-        return None
-
     try:
+        image_bgr: Optional[np.ndarray] = None
+
         # Handle numpy array (OpenCV BGR format)
         if isinstance(image_source, np.ndarray):
-            # Convert BGR to RGB for PIL
-            if len(image_source.shape) == 3 and image_source.shape[2] == 3:
-                rgb_image = cv2.cvtColor(image_source, cv2.COLOR_BGR2RGB)
-            else:
-                rgb_image = image_source
-            pil_image = Image.fromarray(rgb_image)
+            image_bgr = image_source
         else:
             # Handle file path
             if not os.path.exists(image_source):
                 print(f"[ERROR] Image file not found: {image_source}")
                 return None
-            pil_image = Image.open(image_source)
+            image_bgr = cv2.imread(image_source, cv2.IMREAD_COLOR)
+            if image_bgr is None:
+                print(f"[ERROR] Failed to read image: {image_source}")
+                return None
 
-        # Compute pHash (perceptual hash)
-        phash = imagehash.phash(pil_image)
+        # Preferred path: imagehash if available
+        if imagehash is not None and Image is not None:
+            if len(image_bgr.shape) == 3 and image_bgr.shape[2] == 3:
+                rgb_image = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+            else:
+                rgb_image = image_bgr
+            pil_image = Image.fromarray(rgb_image)
+            return str(imagehash.phash(pil_image))
 
-        # Return as hex string
-        return str(phash)
+        # Fallback path: OpenCV DCT pHash
+        return _compute_phash_cv(image_bgr)
 
     except Exception as e:
         print(f"[ERROR] Failed to compute pHash: {e}")
@@ -98,17 +127,12 @@ def compare_phash(hash1: str, hash2: str) -> int:
     Returns:
         汉明距离 (0-64)，数值越小表示图像越相似
     """
-    if imagehash is None:
-        print("[ERROR] imagehash library not installed")
-        return 64  # Maximum distance
-
     try:
-        # Parse hex strings to ImageHash objects
-        phash1 = imagehash.hex_to_hash(hash1)
-        phash2 = imagehash.hex_to_hash(hash2)
-
-        # Calculate hamming distance
-        return phash1 - phash2
+        if imagehash is not None:
+            phash1 = imagehash.hex_to_hash(hash1)
+            phash2 = imagehash.hex_to_hash(hash2)
+            return phash1 - phash2
+        return _hamming_distance_hex(hash1, hash2)
 
     except Exception as e:
         print(f"[ERROR] Failed to compare pHash: {e}")

@@ -74,6 +74,7 @@ BUTTON_RIGHT = 1
 BUTTON_MIDDLE = 2
 BUTTON_SIDE_REAR = 3
 BUTTON_SIDE_FRONT = 4
+CLICK_POST_DELAY_S = 0.1
 
 
 class FerrumConnectionError(Exception):
@@ -177,8 +178,8 @@ class FerrumController:
             if not wait_response:
                 return ""
 
-            # 读取响应直到遇到prompt
-            response_lines = []
+            # 读取响应直到遇到prompt（Ferrum prompt 通常为 ">>> "，末尾无换行）
+            response_buffer = bytearray()
             start_time = time.monotonic()
 
             while True:
@@ -186,14 +187,17 @@ class FerrumController:
                     raise TimeoutError(f"命令超时: {command}")
 
                 if self._serial.in_waiting:
-                    line = self._serial.readline().decode('utf-8', errors='ignore')
-                    response_lines.append(line)
+                    chunk = self._serial.read(self._serial.in_waiting)
+                    response_buffer.extend(chunk)
 
-                    # 检查是否收到prompt
-                    if ">>> " in line:
+                    # prompt 可能不带换行，不能使用 readline() 作为边界
+                    if b">>>" in response_buffer:
                         break
                 else:
                     time.sleep(0.001)  # 短暂等待避免CPU占用
+
+            # 解码并按行切分，兼容后续解析逻辑
+            response_lines = response_buffer.decode('utf-8', errors='ignore').splitlines()
 
             # 解析响应：第一行是echo，最后一行是prompt，中间是结果
             result = self._parse_response(response_lines, command)
@@ -375,7 +379,20 @@ class FerrumController:
         self._move(x, y)
         # 点击左键
         self._send_command(f"km.click({BUTTON_LEFT})")
+        time.sleep(CLICK_POST_DELAY_S)
         logger.debug(f"[Ferrum] 点击 ({x}, {y})")
+
+    def click_current(self) -> None:
+        """
+        在当前鼠标位置点击左键（不移动）
+
+        直接发送 km.click(0) 命令，不改变鼠标位置。
+        用于已经移动到位后的点击操作。
+        """
+        self._validate_connection()
+        self._send_command(f"km.click({BUTTON_LEFT})")
+        time.sleep(CLICK_POST_DELAY_S)
+        logger.debug("[Ferrum] 点击当前位置")
 
     def move_and_click(self, x: int, y: int) -> None:
         """
@@ -417,6 +434,7 @@ class FerrumController:
 
             # 发送点击命令（等待响应确认）
             self._send_command(f"km.click({BUTTON_LEFT})")
+            time.sleep(CLICK_POST_DELAY_S)
             print(f"[Ferrum] move_and_click 完成")
 
         except Exception as e:
@@ -434,6 +452,7 @@ class FerrumController:
         self._validate_connection()
         self._send_command(f"km.move({x}, {y})")
         self._send_command(f"km.click({BUTTON_RIGHT})")
+        time.sleep(CLICK_POST_DELAY_S)
         logger.debug(f"[Ferrum] 右键点击 ({x}, {y})")
 
     def scroll(self, direction: str, ticks: int) -> None:
@@ -515,20 +534,18 @@ class FerrumController:
         codes = self._parse_key(key_name)
         ordered_codes = self._order_codes(codes)
 
-        if len(ordered_codes) == 1:
-            # 单键使用km.press（自动时序）
-            self._send_command(f"km.press({ordered_codes[0]})")
-        else:
-            # 组合键使用down/up序列，修饰键先按下
-            # 按下所有键
-            for code in ordered_codes:
-                self._send_command(f"km.down({code})")
-                time.sleep(0.01)  # 10ms延迟
-            # 保持50ms
-            time.sleep(0.05)
-            # 释放所有键（逆序）
-            for code in reversed(ordered_codes):
-                self._send_command(f"km.up({code})")
+        # 使用统一 down/hold/up 时序，避免部分游戏场景下 km.press 时长过短导致按键被吞。
+        # 组合键与单键都走同一逻辑，修饰键优先按下。
+        for code in ordered_codes:
+            self._send_command(f"km.down({code})")
+            time.sleep(0.012)
+
+        # 单键和组合键都保持一小段时间，提升 ESC 等关键按键稳定性。
+        time.sleep(0.06)
+
+        for code in reversed(ordered_codes):
+            self._send_command(f"km.up({code})")
+            time.sleep(0.008)
 
         logger.debug(f"[Ferrum] 按键: {key_name}")
 

@@ -99,20 +99,12 @@
             "description": "扫描并索引账号",
             "entry": "AccountIndexingMain",
             "pipeline": "assets/resource/pipeline/account_indexing.json"
-        },
-        {
-            "name": "TriggerTask",
-            "label": "图像触发",
-            "description": "基于图像检测的半自动触发任务 (F11功能)",
-            "entry": "trigger_actionMain",
-            "pipeline": "assets/resource/pipeline/trigger_action.json"
         }
     ],
 
     "import": [
         "assets/resource/pipeline/guild_donation.json",
         "assets/resource/pipeline/character_switch.json",
-        "assets/resource/pipeline/account_indexing.json",
-        "assets/resource/pipeline/trigger_action.json"
+        "assets/resource/pipeline/account_indexing.json"
     ]
 }

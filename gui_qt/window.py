@@ -1,0 +1,1156 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Qt main window shell for the MAA-style launcher."""
+
+from __future__ import annotations
+
+import ctypes
+import ctypes.wintypes
+import os
+import sys
+
+from PySide6.QtCore import QEvent, QPoint, Property, QEasingCurve, QPropertyAnimation, QRect, Qt
+from PySide6.QtGui import QColor, QCursor, QEnterEvent, QMouseEvent, QPaintEvent, QPainter
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMenu,
+    QPlainTextEdit,
+    QPushButton,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+    QApplication,
+)
+
+try:
+    import keyboard
+except ImportError:
+    keyboard = None
+
+from gui_qt.adapters.launcher_bridge import LauncherBridge
+from gui_qt.theme import load_icon
+from gui_qt.titlebar import LauncherTitleBar
+from gui_qt.widgets import AnimatedButton, AnimatedTabWidget, BackendToggleButton
+from launcher.service import resolve_controller_name
+
+
+TASK_ITEMS = [
+    {"task_name": "AccountIndexing", "label": "账号读取", "checked": True, "description": "扫描并索引当前账号角色"},
+    {"task_name": "CharacterSwitch", "label": "全自动捐献", "checked": False, "description": "执行角色切换与完整捐献流程"},
+]
+
+CHECKLIST_ITEMS = [
+    # Configuration widgets will be attached here later.
+]
+
+
+class TaskRowWidget(QWidget):
+    """Task row that supports drag sorting outside its controls."""
+
+    def __init__(self, task_item: dict[str, str | bool], parent_window: "FerrumMainWindow", parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.parent_window = parent_window
+        self.task_item = task_item
+        self.setObjectName("taskRow")
+        self.setCursor(Qt.OpenHandCursor)
+        self.setFixedHeight(40)
+        self.drag_activation_distance = 4
+        self._drag_candidate = False
+        self._drag_started = False
+        self._press_global_pos = None
+        self._press_offset = None
+        self._hover_strength = 0.0
+        self.hover_animation = QPropertyAnimation(self, b"hoverStrength", self)
+        self.hover_animation.setDuration(140)
+        self.hover_animation.setEasingCurve(QEasingCurve.OutCubic)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(6, 4, 6, 4)
+        layout.setSpacing(8)
+
+        self.checkbox = QCheckBox(str(task_item["label"]), self)
+        self.checkbox.setChecked(bool(task_item.get("checked", False)))
+        self.checkbox.toggled.connect(lambda checked: self.task_item.__setitem__("checked", bool(checked)))
+        self.checkbox.toggled.connect(lambda _checked: self.parent_window._persist_task_queue_settings())
+        self.checkbox.installEventFilter(self)
+
+        self.gear_button = AnimatedButton("", self)
+        self.gear_button.setObjectName("miniButton")
+        self.gear_button.setIcon(load_icon("gear.svg"))
+        self.gear_button.clicked.connect(lambda: self.parent_window._open_task_config(str(self.task_item["task_name"])))
+
+        layout.addWidget(self.checkbox, 1)
+        layout.addWidget(self.gear_button, 0)
+
+    def _drag_allowed_from_pos(self, pos) -> bool:
+        if self.gear_button.geometry().contains(pos):
+            return False
+        if self.checkbox.geometry().contains(pos):
+            return not self._checkbox_indicator_rect().contains(pos)
+        return True
+
+    def _checkbox_indicator_rect(self):
+        indicator_size = 18
+        checkbox_rect = self.checkbox.geometry()
+        indicator_y = checkbox_rect.y() + max(0, (checkbox_rect.height() - indicator_size) // 2)
+        return QRect(checkbox_rect.x(), indicator_y, indicator_size, indicator_size)
+
+    def _drag_allowed(self, event: QMouseEvent) -> bool:
+        return self._drag_allowed_from_pos(event.position().toPoint())
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.LeftButton and self._drag_allowed(event):
+            self._drag_candidate = True
+            self._drag_started = False
+            self._press_global_pos = event.globalPosition().toPoint()
+            self._press_offset = event.position().toPoint()
+        super().mousePressEvent(event)
+
+    def enterEvent(self, event: QEnterEvent) -> None:
+        self._animate_hover(1.0)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        self._animate_hover(0.0)
+        super().leaveEvent(event)
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        if self._drag_candidate:
+            if not self._drag_started and self._press_global_pos is not None:
+                distance = (event.globalPosition().toPoint() - self._press_global_pos).manhattanLength()
+                if distance >= self.drag_activation_distance:
+                    self._drag_started = True
+                    self.setCursor(Qt.ClosedHandCursor)
+                    self.parent_window._begin_task_drag(
+                        str(self.task_item["task_name"]),
+                        event.globalPosition().toPoint(),
+                        self._press_offset or event.position().toPoint(),
+                    )
+            if self._drag_started:
+                self.parent_window._drag_task(event.globalPosition().toPoint())
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if self._drag_candidate and self._drag_started:
+            self.parent_window._end_task_drag(event.globalPosition().toPoint())
+        self._drag_candidate = False
+        self._drag_started = False
+        self._press_global_pos = None
+        self._press_offset = None
+        self.setCursor(Qt.OpenHandCursor)
+        super().mouseReleaseEvent(event)
+
+    def eventFilter(self, watched, event) -> bool:
+        if watched is self.checkbox and isinstance(event, QMouseEvent):
+            local_pos = event.position().toPoint()
+            translated_pos = local_pos + self.checkbox.geometry().topLeft()
+            if self._drag_allowed_from_pos(translated_pos):
+                if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.LeftButton:
+                    self._drag_candidate = True
+                    self._drag_started = False
+                    self._press_global_pos = event.globalPosition().toPoint()
+                    self._press_offset = translated_pos
+                    return True
+                if event.type() == QEvent.Type.MouseMove and self._drag_candidate:
+                    if not self._drag_started and self._press_global_pos is not None:
+                        distance = (event.globalPosition().toPoint() - self._press_global_pos).manhattanLength()
+                        if distance >= self.drag_activation_distance:
+                            self._drag_started = True
+                            self.setCursor(Qt.ClosedHandCursor)
+                            self.parent_window._begin_task_drag(
+                                str(self.task_item["task_name"]),
+                                event.globalPosition().toPoint(),
+                                self._press_offset or translated_pos,
+                            )
+                    if self._drag_started:
+                        self.parent_window._drag_task(event.globalPosition().toPoint())
+                    return True
+                if event.type() == QEvent.Type.MouseButtonRelease and self._drag_candidate:
+                    if self._drag_started:
+                        self.parent_window._end_task_drag(event.globalPosition().toPoint())
+                    self._drag_candidate = False
+                    self._drag_started = False
+                    self._press_global_pos = None
+                    self._press_offset = None
+                    self.setCursor(Qt.OpenHandCursor)
+                    return True
+        return super().eventFilter(watched, event)
+
+    def set_drag_preview(self, active: bool) -> None:
+        self.setProperty("dragging", active)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.update()
+
+    def get_hover_strength(self) -> float:
+        return self._hover_strength
+
+    def set_hover_strength(self, value: float) -> None:
+        self._hover_strength = max(0.0, min(1.0, float(value)))
+        self.update()
+
+    hoverStrength = Property(float, get_hover_strength, set_hover_strength)
+
+    def paintEvent(self, event: QPaintEvent) -> None:
+        super().paintEvent(event)
+        if self._hover_strength <= 0:
+            return
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        overlay = QColor("#ffffff")
+        overlay.setAlpha(int(10 * self._hover_strength))
+        painter.fillRect(self.rect().adjusted(1, 1, -1, -1), overlay)
+
+    def _animate_hover(self, target: float) -> None:
+        self.hover_animation.stop()
+        self.hover_animation.setStartValue(self._hover_strength)
+        self.hover_animation.setEndValue(target)
+        self.hover_animation.start()
+
+
+class TaskListContainer(QWidget):
+    """Absolute-positioned task list area for animated reordering."""
+
+    def __init__(self, parent_window: "FerrumMainWindow", parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.parent_window = parent_window
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self.parent_window._layout_task_rows(animated=False)
+
+
+class FerrumMainWindow(QMainWindow):
+    """Minimal main window shell for the Qt launcher."""
+
+    WM_NCHITTEST = 0x0084
+    HTLEFT = 10
+    HTRIGHT = 11
+    HTTOP = 12
+    HTTOPLEFT = 13
+    HTTOPRIGHT = 14
+    HTBOTTOM = 15
+    HTBOTTOMLEFT = 16
+    HTBOTTOMRIGHT = 17
+
+    def __init__(self, bridge: LauncherBridge | None = None) -> None:
+        super().__init__()
+        self.bridge = bridge or LauncherBridge(parent=self)
+        self.settings = self.bridge.load_settings()
+        self.interface_config = self.bridge.load_interface()
+        self.ports = dict(self.settings.ports)
+        self.current_backend = self.settings.driver_backend
+        self.task_items = [dict(item, visible=True) for item in TASK_ITEMS]
+        self._restore_task_queue_state()
+        self.task_checkboxes: dict[str, QCheckBox] = {}
+        self.task_rows: dict[str, TaskRowWidget] = {}
+        self.dragging_task_name: str | None = None
+        self.drag_target_index: int | None = None
+        self.drag_press_offset = None
+        self.task_row_spacing = 4
+        self.task_row_animations: dict[str, QPropertyAnimation] = {}
+        self.resize_margin = 6
+        self.task_labels = {item["task_name"]: str(item["label"]) for item in self.task_items}
+        self.active_config_task_name: str | None = None
+        self._f10_hotkey_handle = None
+        self.setWindowTitle("FerrumBot")
+        self.setWindowFlag(Qt.FramelessWindowHint, True)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.resize(1280, 760)
+        self.setMinimumSize(1180, 720)
+
+        root = QWidget(self)
+        root.setObjectName("appRoot")
+        layout = QVBoxLayout(root)
+        layout.setContentsMargins(8, 6, 8, 8)
+        layout.setSpacing(0)
+
+        shell = QWidget(root)
+        shell.setObjectName("appShell")
+        shell_layout = QVBoxLayout(shell)
+        shell_layout.setContentsMargins(10, 8, 10, 10)
+        shell_layout.setSpacing(8)
+
+        self.title_bar = LauncherTitleBar(
+            "LAA 1.0.0",
+            shell,
+        )
+        shell_layout.addWidget(self.title_bar)
+
+        self.tab_widget = AnimatedTabWidget(shell)
+        self.tab_widget.setObjectName("mainTabs")
+        self.tab_widget.addTab(self._build_page("主界面迁移中"), "一键长草")
+        self.tab_widget.addTab(self._build_page("工具页迁移中"), "小工具")
+        self.tab_widget.addTab(self._build_page("设置页迁移中"), "设置")
+        self.tab_widget.addTab(self._build_page("日志页迁移中"), "日志")
+        shell_layout.addWidget(self.tab_widget)
+
+        layout.addWidget(shell)
+
+        self.setCentralWidget(root)
+        app = QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self)
+        self._bind_bridge_signals()
+        self._register_global_hotkeys()
+
+    def _restore_task_queue_state(self) -> None:
+        checked_map = dict(getattr(self.settings, "task_checked", {}) or {})
+        visibility_map = dict(getattr(self.settings, "task_visibility", {}) or {})
+        order = [str(name) for name in getattr(self.settings, "task_order", []) or []]
+        order_map = {name: index for index, name in enumerate(order)}
+
+        for item in self.task_items:
+            task_name = str(item["task_name"])
+            if task_name in checked_map:
+                item["checked"] = bool(checked_map[task_name])
+            if task_name in visibility_map:
+                item["visible"] = bool(visibility_map[task_name])
+
+        self.task_items.sort(key=lambda item: order_map.get(str(item["task_name"]), len(order_map)))
+
+    def _build_page(self, text: str) -> QWidget:
+        if text == "主界面迁移中":
+            return self._build_home_page()
+        if text == "工具页迁移中":
+            return self._build_trigger_page()
+        if text == "设置页迁移中":
+            return self._build_settings_page()
+        if text == "日志页迁移中":
+            return self._build_logs_page()
+
+        page = QWidget(self)
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(24, 24, 24, 24)
+        label = QLabel(text, page)
+        label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(label)
+        return page
+
+    def _build_home_page(self) -> QWidget:
+        page = QWidget(self)
+        page.setObjectName("homePage")
+        outer = QHBoxLayout(page)
+        outer.setContentsMargins(18, 18, 18, 18)
+        outer.setSpacing(16)
+
+        outer.addWidget(self._build_task_panel(), 0)
+        outer.addWidget(self._build_content_panel(), 1)
+        return page
+
+    def _build_task_panel(self) -> QWidget:
+        panel = QWidget(self)
+        panel.setObjectName("taskPanel")
+        panel.setFixedWidth(290)
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+
+        header = QLabel("任务队列", panel)
+        header.setObjectName("sectionTitle")
+        layout.addWidget(header)
+
+        self.task_list_container = TaskListContainer(self, panel)
+        self.task_list_container.setObjectName("taskListContainer")
+        self.task_drag_preview = QLabel(self)
+        self.task_drag_preview.setObjectName("taskDragPreview")
+        self.task_drag_preview.hide()
+        self.task_drag_preview.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        layout.addWidget(self.task_list_container, 1)
+
+        self._rebuild_task_list()
+
+        actions = QHBoxLayout()
+        actions.setObjectName("taskListActions")
+        actions.setSpacing(6)
+        select_button = AnimatedButton("全选", panel)
+        select_button.clicked.connect(self._select_all_tasks)
+        clear_button = AnimatedButton("清空", panel)
+        clear_button.clicked.connect(self._clear_all_tasks)
+        add_button = AnimatedButton("", panel)
+        add_button.setObjectName("miniButton")
+        add_button.setIcon(load_icon("add.svg"))
+        add_button.clicked.connect(self._show_task_visibility_menu)
+        self.task_visibility_button = add_button
+        actions.addWidget(add_button)
+        actions.addWidget(select_button)
+        actions.addWidget(clear_button)
+        layout.addLayout(actions)
+
+        separator = QFrame(panel)
+        separator.setFrameShape(QFrame.HLine)
+        separator.setObjectName("taskSeparator")
+        layout.addWidget(separator)
+
+        bottom_layout = QVBoxLayout()
+        bottom_layout.setContentsMargins(0, 0, 0, 0)
+        bottom_layout.setSpacing(8)
+
+        done_label = QLabel("完成后", panel)
+        done_label.setObjectName("sectionTitle")
+        done_action = QLabel("无动作", panel)
+        done_action.setObjectName("taskMeta")
+        self.start_button = AnimatedButton("Link Start!", panel)
+        self.start_button.setObjectName("primaryButton")
+        self.start_button.setMinimumHeight(48)
+        self.start_button.clicked.connect(self._start_selected_tasks)
+
+        bottom_layout.addWidget(done_label)
+        bottom_layout.addWidget(done_action)
+        bottom_layout.addWidget(self.start_button)
+        layout.addLayout(bottom_layout)
+        return panel
+
+    def _build_content_panel(self) -> QWidget:
+        panel = QWidget(self)
+        panel.setObjectName("contentPanel")
+        config_layout = QVBoxLayout(panel)
+        config_layout.setContentsMargins(18, 18, 18, 18)
+        config_layout.setSpacing(12)
+
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(0, 0, 0, 0)
+        header_row.setSpacing(12)
+        header_row.addWidget(self._build_status_strip(), 0, Qt.AlignTop)
+
+        self.config_title_label = QLabel("", panel)
+        self.config_title_label.setObjectName("sectionTitle")
+        self.config_group = QWidget(panel)
+        self.config_group.setObjectName("configGroup")
+        config_group_layout = QVBoxLayout(self.config_group)
+        config_group_layout.setContentsMargins(0, 0, 0, 0)
+        config_group_layout.setSpacing(6)
+        self.config_placeholder_label = QLabel("暂无配置项", panel)
+        self.config_placeholder_label.setObjectName("contentHint")
+        self.account_indexing_result_card = QWidget(panel)
+        self.account_indexing_result_card.setObjectName("contentPanel")
+        result_layout = QVBoxLayout(self.account_indexing_result_card)
+        result_layout.setContentsMargins(12, 12, 12, 12)
+        result_layout.setSpacing(10)
+        self.account_indexing_count_label = QLabel("本次角色总数：-", self.account_indexing_result_card)
+        self.account_indexing_count_label.setObjectName("contentInfo")
+        result_actions = QHBoxLayout()
+        result_actions.setContentsMargins(0, 0, 0, 0)
+        result_actions.setSpacing(8)
+        self.account_indexing_open_button = AnimatedButton("打开角色截图目录", self.account_indexing_result_card)
+        self.account_indexing_save_button = AnimatedButton("保存", self.account_indexing_result_card)
+        self.account_indexing_discard_button = AnimatedButton("丢弃", self.account_indexing_result_card)
+        self.account_indexing_open_button.clicked.connect(self._open_account_indexing_characters_dir)
+        self.account_indexing_save_button.clicked.connect(self._save_account_indexing_staging)
+        self.account_indexing_discard_button.clicked.connect(self._discard_account_indexing_staging)
+        result_actions.addWidget(self.account_indexing_open_button)
+        result_actions.addWidget(self.account_indexing_save_button)
+        result_actions.addWidget(self.account_indexing_discard_button)
+        result_layout.addWidget(self.account_indexing_count_label)
+        result_layout.addLayout(result_actions)
+        self.account_indexing_result_card.hide()
+        self.pending_account_indexing_result: dict | None = None
+
+        config_layout.addLayout(header_row)
+        config_layout.addWidget(self.config_title_label)
+        config_group_layout.addWidget(self.config_placeholder_label)
+        config_group_layout.addWidget(self.account_indexing_result_card)
+        config_layout.addWidget(self.config_group)
+        config_layout.addStretch(1)
+        self._update_config_panel()
+        return panel
+
+    def _build_status_strip(self) -> QWidget:
+        strip = QWidget(self)
+        strip.setObjectName("topStatusPanel")
+        outer = QHBoxLayout(strip)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        status_card = QWidget(strip)
+        status_card.setObjectName("statusStrip")
+        layout = QHBoxLayout(status_card)
+        layout.setContentsMargins(10, 6, 10, 6)
+        layout.setSpacing(10)
+
+        driver_group = QWidget(status_card)
+        driver_group.setObjectName("statusGroup")
+        driver_layout = QVBoxLayout(driver_group)
+        driver_layout.setContentsMargins(0, 0, 0, 0)
+        driver_layout.setSpacing(1)
+        driver_label = QLabel("驱动", driver_group)
+        driver_label.setObjectName("statusDriverLabel")
+        self.driver_value = QLabel(self.settings.driver_backend.upper(), driver_group)
+        self.driver_value.setObjectName("statusGroupValue")
+        driver_layout.addWidget(driver_label)
+        driver_layout.addWidget(self.driver_value)
+
+        runtime_group = QWidget(status_card)
+        runtime_group.setObjectName("statusGroup")
+        runtime_layout = QVBoxLayout(runtime_group)
+        runtime_layout.setContentsMargins(0, 0, 0, 0)
+        runtime_layout.setSpacing(1)
+        runtime_label = QLabel("状态", runtime_group)
+        runtime_label.setObjectName("statusGroupLabel")
+        self.runtime_state_value = QLabel("空闲", runtime_group)
+        self.runtime_state_value.setObjectName("statusGroupValue")
+        runtime_layout.addWidget(runtime_label)
+        runtime_layout.addWidget(self.runtime_state_value)
+
+        task_group = QWidget(status_card)
+        task_group.setObjectName("statusGroup")
+        task_layout = QVBoxLayout(task_group)
+        task_layout.setContentsMargins(0, 0, 0, 0)
+        task_layout.setSpacing(1)
+        task_label = QLabel("任务", task_group)
+        task_label.setObjectName("statusGroupLabel")
+        self.current_task_value = QLabel("-", task_group)
+        self.current_task_value.setObjectName("statusGroupValue")
+        task_layout.addWidget(task_label)
+        task_layout.addWidget(self.current_task_value)
+
+        connection_group = QWidget(status_card)
+        connection_group.setObjectName("statusGroup")
+        connection_layout = QVBoxLayout(connection_group)
+        connection_layout.setContentsMargins(0, 0, 0, 0)
+        connection_layout.setSpacing(1)
+        connection_label = QLabel("连接", connection_group)
+        connection_label.setObjectName("statusConnectionLabel")
+        self.connection_value = QLabel("未检测", connection_group)
+        self.connection_value.setObjectName("statusGroupValue")
+        connection_layout.addWidget(connection_label)
+        connection_layout.addWidget(self.connection_value)
+
+        self.status_probe_button = AnimatedButton("", status_card)
+        self.status_probe_button.setObjectName("miniButton")
+        self.status_probe_button.setIcon(load_icon("refresh.svg"))
+        self.status_probe_button.clicked.connect(self._probe_current_driver)
+        self.status_settings_button = AnimatedButton("", status_card)
+        self.status_settings_button.setObjectName("miniButton")
+        self.status_settings_button.setIcon(load_icon("settings.svg"))
+        self.status_settings_button.clicked.connect(self._open_settings_tab)
+
+        layout.addWidget(driver_group)
+        layout.addWidget(connection_group)
+        layout.addWidget(runtime_group)
+        layout.addWidget(task_group)
+        layout.addWidget(self.status_probe_button)
+        layout.addWidget(self.status_settings_button)
+        outer.addWidget(status_card, 0)
+        return strip
+
+    def _build_settings_page(self) -> QWidget:
+        page = QWidget(self)
+        page.setObjectName("settingsPage")
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(14)
+
+        title = QLabel("驱动设置", page)
+        title.setObjectName("sectionTitle")
+        layout.addWidget(title)
+
+        driver_panel = QWidget(page)
+        driver_panel.setObjectName("contentPanel")
+        driver_layout = QVBoxLayout(driver_panel)
+        driver_layout.setContentsMargins(16, 16, 16, 16)
+        driver_layout.setSpacing(12)
+
+        radio_row = QHBoxLayout()
+        self.ferrum_button = BackendToggleButton("Ferrum", driver_panel)
+        self.makcu_button = BackendToggleButton("Makcu", driver_panel)
+        self.ferrum_button.setObjectName("backendToggle")
+        self.makcu_button.setObjectName("backendToggle")
+        self.ferrum_button.clicked.connect(lambda: self._select_backend("ferrum"))
+        self.makcu_button.clicked.connect(lambda: self._select_backend("makcu"))
+        radio_row.addWidget(self.ferrum_button)
+        radio_row.addWidget(self.makcu_button)
+        radio_row.addStretch(1)
+        driver_layout.addLayout(radio_row)
+
+        port_row = QHBoxLayout()
+        port_row.addWidget(QLabel("COM Port", driver_panel))
+        self.port_entry = QLineEdit(self.ports.get(self.current_backend, "COM2"), driver_panel)
+        self.port_entry.editingFinished.connect(self._persist_settings)
+        self.detect_button = AnimatedButton("检测连接", driver_panel)
+        self.detect_button.clicked.connect(self._probe_current_driver)
+        port_row.addWidget(self.port_entry, 1)
+        port_row.addWidget(self.detect_button)
+        driver_layout.addLayout(port_row)
+
+        self.settings_status_label = QLabel("选择驱动并探测连接状态。", driver_panel)
+        self.settings_status_label.setObjectName("contentHint")
+        driver_layout.addWidget(self.settings_status_label)
+        layout.addWidget(driver_panel, 0)
+        layout.addStretch(1)
+
+        self._select_backend(self.current_backend, persist=False)
+        return page
+
+    def _build_logs_page(self) -> QWidget:
+        page = QWidget(self)
+        page.setObjectName("logsPage")
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(12)
+
+        title = QLabel("运行日志", page)
+        title.setObjectName("sectionTitle")
+        self.log_view = QPlainTextEdit(page)
+        self.log_view.setReadOnly(True)
+        self.log_view.setObjectName("logView")
+
+        layout.addWidget(title)
+        layout.addWidget(self.log_view, 1)
+        return page
+
+    def _build_trigger_page(self) -> QWidget:
+        page = QWidget(self)
+        page.setObjectName("triggerPage")
+        outer = QHBoxLayout(page)
+        outer.setContentsMargins(18, 18, 18, 18)
+        outer.setSpacing(16)
+
+        left = QWidget(page)
+        left.setObjectName("taskPanel")
+        left.setFixedWidth(320)
+        left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(16, 16, 16, 16)
+        left_layout.setSpacing(12)
+
+        title = QLabel("图像触发", left)
+        title.setObjectName("sectionTitle")
+        description = QLabel("点击按钮长期启用，再次点击关闭线程。", left)
+        description.setObjectName("contentHint")
+        self.trigger_toggle_button = AnimatedButton("启动图像触发", left)
+        self.trigger_toggle_button.setObjectName("primaryButton")
+        self.trigger_toggle_button.setMinimumHeight(42)
+        self.trigger_toggle_button.clicked.connect(self._toggle_trigger)
+        self.trigger_state_label = QLabel("未运行", left)
+        self.trigger_state_label.setObjectName("taskMeta")
+
+        left_layout.addWidget(title)
+        left_layout.addWidget(description)
+        left_layout.addWidget(self.trigger_toggle_button)
+        left_layout.addWidget(self.trigger_state_label)
+        left_layout.addStretch(1)
+
+        right = QWidget(page)
+        right.setObjectName("contentPanel")
+        right_layout = QVBoxLayout(right)
+        right_layout.setContentsMargins(18, 18, 18, 18)
+        right_layout.setSpacing(10)
+
+        right_title = QLabel("功能说明", right)
+        right_title.setObjectName("sectionTitle")
+        guide = QLabel(
+            "用途\n长期轮询屏幕中的特定图像，并在命中后立即执行预设动作。\n\n"
+            "任务 A\n检测 target_a.png 后执行 Up -> Up -> Down。\n\n"
+            "任务 B\n检测 target_b_1.png 或 target_b_2.png 后执行偏移点击，再按 Enter。",
+            right,
+        )
+        guide.setObjectName("contentInfo")
+        guide.setWordWrap(True)
+
+        right_layout.addWidget(right_title)
+        right_layout.addWidget(guide, 1)
+
+        outer.addWidget(left, 0)
+        outer.addWidget(right, 1)
+        return page
+
+    def _bind_bridge_signals(self) -> None:
+        self.bridge.task_started.connect(self._on_task_started)
+        self.bridge.task_finished.connect(self._on_task_finished)
+        self.bridge.log_emitted.connect(self._append_log)
+        self.bridge.trigger_started.connect(self._on_trigger_started)
+        self.bridge.trigger_finished.connect(self._on_trigger_finished)
+        self.bridge.probe_finished.connect(self._on_probe_finished)
+        account_indexing_signal = getattr(self.bridge, "account_indexing_staged", None)
+        if account_indexing_signal is not None:
+            account_indexing_signal.connect(self._on_account_indexing_staged)
+
+    def _select_all_tasks(self) -> None:
+        for checkbox in self.task_checkboxes.values():
+            checkbox.setChecked(True)
+
+    def _clear_all_tasks(self) -> None:
+        for checkbox in self.task_checkboxes.values():
+            checkbox.setChecked(False)
+
+    def _selected_tasks(self) -> list[dict[str, str | bool]]:
+        selected = []
+        for item in self.task_items:
+            if not item.get("visible", True):
+                continue
+            checkbox = self.task_checkboxes.get(str(item["task_name"]))
+            if checkbox is not None and checkbox.isChecked():
+                selected.append(item)
+        return selected
+
+    def visible_task_names(self) -> list[str]:
+        return [str(item["task_name"]) for item in self.task_items if item.get("visible", True)]
+
+    def _task_checked_state(self) -> dict[str, bool]:
+        return {str(item["task_name"]): bool(item.get("checked", False)) for item in self.task_items}
+
+    def _task_visibility_state(self) -> dict[str, bool]:
+        return {str(item["task_name"]): bool(item.get("visible", True)) for item in self.task_items}
+
+    def _persist_task_queue_settings(self) -> None:
+        self.bridge.save_settings(
+            self.current_backend,
+            dict(self.ports),
+            task_checked=self._task_checked_state(),
+            task_visibility=self._task_visibility_state(),
+            task_order=[str(item["task_name"]) for item in self.task_items],
+        )
+
+    def set_task_visibility(self, task_name: str, visible: bool) -> None:
+        for item in self.task_items:
+            if str(item["task_name"]) == task_name:
+                item["visible"] = bool(visible)
+                break
+        self._rebuild_task_list()
+        self._persist_task_queue_settings()
+
+    def set_task_order(self, order: list[str]) -> None:
+        order_map = {name: index for index, name in enumerate(order)}
+        self.task_items.sort(key=lambda item: order_map.get(str(item["task_name"]), len(order_map)))
+        self._rebuild_task_list()
+        self._persist_task_queue_settings()
+
+    def _apply_live_task_order(self, visible_order: list[str]) -> None:
+        hidden_names = [str(item["task_name"]) for item in self.task_items if not item.get("visible", True)]
+        order_map = {name: index for index, name in enumerate(visible_order + hidden_names)}
+        self.task_items.sort(key=lambda item: order_map.get(str(item["task_name"]), len(order_map)))
+        self._layout_task_rows(animated=True)
+
+    def _rebuild_task_list(self) -> None:
+        for row_widget in self.task_rows.values():
+            row_widget.deleteLater()
+        self.task_checkboxes.clear()
+        self.task_rows.clear()
+        for item in self.task_items:
+            if not item.get("visible", True):
+                continue
+            row_widget = TaskRowWidget(item, self, self.task_list_container)
+            if self.dragging_task_name == str(item["task_name"]):
+                row_widget.set_drag_preview(True)
+                row_widget.hide()
+            self.task_checkboxes[str(item["task_name"])] = row_widget.checkbox
+            self.task_rows[str(item["task_name"])] = row_widget
+        self._layout_task_rows(animated=False)
+
+    def _show_task_visibility_menu(self) -> None:
+        menu = QMenu(self)
+        for item in self.task_items:
+            action = menu.addAction(str(item["label"]))
+            action.setCheckable(True)
+            action.setChecked(bool(item.get("visible", True)))
+            action.toggled.connect(lambda checked, name=str(item["task_name"]): self.set_task_visibility(name, checked))
+
+        menu.exec(self.task_visibility_button.mapToGlobal(self.task_visibility_button.rect().bottomLeft()))
+
+    def _resolve_controller_name(self, backend: str) -> str:
+        try:
+            return resolve_controller_name(self.interface_config, backend)
+        except Exception:
+            fallback = {"ferrum": "KMBox-Default", "makcu": "MAKCU-Default"}
+            return fallback.get(str(backend).lower(), "KMBox-Default")
+
+    def _on_backend_changed(self, backend: str, checked: bool) -> None:
+        if not checked:
+            return
+        self.current_backend = backend
+        if hasattr(self, "port_entry"):
+            self.port_entry.setText(self.ports.get(backend, "COM2" if backend == "ferrum" else "COM3"))
+        self.driver_value.setText(backend.upper())
+        self._persist_settings()
+
+    def _select_backend(self, backend: str, persist: bool = True) -> None:
+        self.current_backend = backend
+        if hasattr(self, "ferrum_button"):
+            self.ferrum_button.setChecked(backend == "ferrum")
+        if hasattr(self, "makcu_button"):
+            self.makcu_button.setChecked(backend == "makcu")
+        if hasattr(self, "port_entry"):
+            self.port_entry.setText(self.ports.get(backend, "COM2" if backend == "ferrum" else "COM3"))
+        self.driver_value.setText(backend.upper())
+        if persist:
+            self._persist_settings()
+
+    def _persist_settings(self) -> None:
+        if hasattr(self, "port_entry"):
+            self.ports[self.current_backend] = self.port_entry.text().strip() or self.ports.get(self.current_backend, "COM2")
+        self.bridge.save_settings(
+            self.current_backend,
+            dict(self.ports),
+            task_checked=self._task_checked_state(),
+            task_visibility=self._task_visibility_state(),
+            task_order=[str(item["task_name"]) for item in self.task_items],
+        )
+
+    def _probe_current_driver(self) -> None:
+        self._persist_settings()
+        port = self.ports.get(self.current_backend, "COM2")
+        self.connection_value.setText("检测中")
+        if hasattr(self, "settings_status_label"):
+            self.settings_status_label.setText("正在探测控制器连接。")
+        self.bridge.probe(self.interface_config, self.current_backend, port)
+
+    def _toggle_trigger(self) -> None:
+        if self.bridge.is_busy():
+            self.bridge.stop_trigger()
+            return
+
+        self._persist_settings()
+        port = self.ports.get(self.current_backend, "COM2")
+        self.bridge.start_trigger(self.interface_config, self.current_backend, port)
+
+    def _open_settings_tab(self) -> None:
+        for index in range(self.tab_widget.count()):
+            if self.tab_widget.tabText(index) == "设置":
+                self.tab_widget.setCurrentIndex(index)
+                return
+
+    def _start_selected_tasks(self) -> None:
+        if self.bridge.is_busy():
+            self.bridge.stop_task()
+            return
+
+        selected = self._selected_tasks()
+        if not selected:
+            self._append_log("[Launcher] no task selected")
+            return
+
+        task = selected[0]
+        backend = self.settings.driver_backend
+        port = self.settings.ports.get(backend, "COM2")
+        controller_name = self._resolve_controller_name(backend)
+        self._set_busy(True)
+        self.bridge.start_task(str(task["task_name"]), controller_name, port)
+
+    def _set_busy(self, busy: bool) -> None:
+        self.start_button.setEnabled(True)
+        self.start_button.setText("运行中..." if busy else "Link Start!")
+        self.task_list_container.setEnabled(not busy)
+        for checkbox in self.task_checkboxes.values():
+            checkbox.setEnabled(not busy)
+
+    def _register_global_hotkeys(self) -> None:
+        if keyboard is None:
+            self._append_log("[Launcher] keyboard hotkey unavailable")
+            return
+        try:
+            self._f10_hotkey_handle = keyboard.add_hotkey("f10", self._request_task_stop)
+        except Exception as exc:
+            self._append_log(f"[Launcher] failed to register F10 hotkey: {exc}")
+
+    def _unregister_global_hotkeys(self) -> None:
+        if keyboard is None or self._f10_hotkey_handle is None:
+            return
+        try:
+            keyboard.remove_hotkey(self._f10_hotkey_handle)
+        except Exception:
+            pass
+        self._f10_hotkey_handle = None
+
+    def _request_task_stop(self) -> None:
+        if self.bridge.is_busy():
+            self.bridge.stop_task()
+
+    def _begin_task_drag(self, task_name: str, global_pos, press_offset) -> None:
+        self.dragging_task_name = task_name
+        self.drag_target_index = self.visible_task_names().index(task_name)
+        self.drag_press_offset = press_offset
+        row = self.task_rows.get(task_name)
+        if row is not None:
+            row.set_drag_preview(True)
+            row.hide()
+            self.task_drag_preview.setPixmap(row.grab())
+            self.task_drag_preview.resize(row.size())
+            self._update_drag_preview_position(global_pos)
+            self.task_drag_preview.show()
+            self.task_drag_preview.raise_()
+        self._layout_task_rows(animated=True)
+
+    def _drag_task(self, global_pos) -> None:
+        if not self.dragging_task_name:
+            return
+        self._update_drag_preview_position(global_pos)
+
+        target_index = self._resolve_drop_index(global_pos)
+        if target_index is None or target_index == self.drag_target_index:
+            return
+
+        self.drag_target_index = target_index
+        visible_names = self.visible_task_names()
+        ordered_names = [name for name in visible_names if name != self.dragging_task_name]
+        clamped_index = max(0, min(target_index, len(ordered_names)))
+        ordered_names.insert(clamped_index, self.dragging_task_name)
+        self._apply_live_task_order(ordered_names)
+
+    def _end_task_drag(self, global_pos) -> None:
+        if not self.dragging_task_name:
+            return
+
+        row = self.task_rows.get(self.dragging_task_name)
+        if row is not None:
+            row.set_drag_preview(False)
+            row.show()
+        self.task_drag_preview.hide()
+        self.dragging_task_name = None
+        self.drag_target_index = None
+        self.drag_press_offset = None
+        self._layout_task_rows(animated=False)
+
+    def _resolve_drop_index(self, global_pos) -> int | None:
+        container_pos = self.task_list_container.mapFromGlobal(global_pos)
+        visible_names = [name for name in self.visible_task_names() if name != self.dragging_task_name]
+        if not visible_names:
+            return 0
+
+        for index, task_name in enumerate(visible_names):
+            row = self.task_rows.get(task_name)
+            if row is None:
+                continue
+            midpoint = row.geometry().top() + (row.height() / 2)
+            if container_pos.y() < midpoint:
+                return index
+        return len(visible_names)
+
+    def _layout_task_rows(self, animated: bool) -> None:
+        if not hasattr(self, "task_list_container"):
+            return
+
+        visible_names = [name for name in self.visible_task_names() if name != self.dragging_task_name]
+        width = max(0, self.task_list_container.width())
+        y = 0
+        gap_index = self.drag_target_index if self.dragging_task_name is not None else None
+        gap_height = self._task_row_height() + self.task_row_spacing if self.dragging_task_name else 0
+
+        for index, task_name in enumerate(visible_names):
+            if gap_index is not None and index == gap_index:
+                y += gap_height
+            row = self.task_rows.get(task_name)
+            if row is None:
+                continue
+            target_rect = row.geometry()
+            target_rect.setX(0)
+            target_rect.setY(y)
+            target_rect.setWidth(width)
+            target_rect.setHeight(self._task_row_height())
+            self._move_task_row(row, target_rect, animated)
+            y += self._task_row_height() + self.task_row_spacing
+
+        if gap_index is not None and gap_index >= len(visible_names):
+            y += gap_height
+
+        self.task_list_container.setMinimumHeight(max(y, self._task_row_height()))
+
+    def _move_task_row(self, row: TaskRowWidget, target_rect, animated: bool) -> None:
+        if row.geometry() == target_rect:
+            row.show()
+            return
+
+        if not animated:
+            row.setGeometry(target_rect)
+            row.show()
+            return
+
+        animation = self.task_row_animations.get(str(row.task_item["task_name"]))
+        if animation is None:
+            animation = QPropertyAnimation(row, b"geometry", self)
+            animation.setDuration(150)
+            animation.setEasingCurve(QEasingCurve.OutCubic)
+            self.task_row_animations[str(row.task_item["task_name"])] = animation
+        animation.stop()
+        animation.setStartValue(row.geometry())
+        animation.setEndValue(target_rect)
+        row.show()
+        animation.start()
+
+    def _task_row_height(self) -> int:
+        if self.task_rows:
+            return next(iter(self.task_rows.values())).height()
+        return 34
+
+    def _update_drag_preview_position(self, global_pos) -> None:
+        if self.drag_press_offset is None:
+            return
+        rail_global = self.task_list_container.mapToGlobal(QPoint(0, 0))
+        preview_local = self.mapFromGlobal(global_pos - self.drag_press_offset)
+        rail_local = self.mapFromGlobal(rail_global)
+        preview_local.setX(rail_local.x())
+        min_y = rail_local.y()
+        max_y = rail_local.y() + self.task_list_container.height() - self.task_drag_preview.height()
+        preview_local.setY(max(min_y, min(preview_local.y(), max_y)))
+        self.task_drag_preview.move(preview_local)
+
+    def _hit_test_resize_region(self, pos) -> int | None:
+        if self.isMaximized():
+            return None
+
+        x = pos.x()
+        y = pos.y()
+        width = self.width()
+        height = self.height()
+        left = x <= self.resize_margin
+        right = x >= width - self.resize_margin
+        top = y <= self.resize_margin
+        bottom = y >= height - self.resize_margin
+
+        if top and left:
+            return self.HTTOPLEFT
+        if top and right:
+            return self.HTTOPRIGHT
+        if bottom and left:
+            return self.HTBOTTOMLEFT
+        if bottom and right:
+            return self.HTBOTTOMRIGHT
+        if left:
+            return self.HTLEFT
+        if right:
+            return self.HTRIGHT
+        if top:
+            return self.HTTOP
+        if bottom:
+            return self.HTBOTTOM
+        return None
+
+    def nativeEvent(self, event_type, message):
+        if sys.platform.startswith("win") and event_type == "windows_generic_MSG":
+            msg = ctypes.wintypes.MSG.from_address(int(message))
+            if msg.message == self.WM_NCHITTEST:
+                point = ctypes.wintypes.POINT()
+                point.x = ctypes.c_short(msg.lParam & 0xFFFF).value
+                point.y = ctypes.c_short((msg.lParam >> 16) & 0xFFFF).value
+                hit = self._hit_test_resize_region(self.mapFromGlobal(QPoint(point.x, point.y)))
+                if hit is not None:
+                    return True, hit
+        return super().nativeEvent(event_type, message)
+
+    def eventFilter(self, watched, event):
+        if self.dragging_task_name and event.type() == event.Type.MouseButtonRelease:
+            global_pos = event.globalPosition().toPoint() if hasattr(event, "globalPosition") else QCursor.pos()
+            self._end_task_drag(global_pos)
+        return super().eventFilter(watched, event)
+
+    def _on_task_started(self, task_name: str) -> None:
+        self.runtime_state_value.setText("运行中")
+        self.current_task_value.setText(self.task_labels.get(task_name, task_name))
+
+    def _on_task_finished(self, success: bool) -> None:
+        self.runtime_state_value.setText("空闲" if success else "失败")
+        self.current_task_value.setText("-")
+        self._set_busy(False)
+
+    def _on_trigger_started(self) -> None:
+        self.runtime_state_value.setText("触发中")
+        self.current_task_value.setText("图像触发")
+        if hasattr(self, "trigger_toggle_button"):
+            self.trigger_toggle_button.setText("停止图像触发")
+        if hasattr(self, "trigger_state_label"):
+            self.trigger_state_label.setText("运行中")
+        self._set_busy(True)
+
+    def _on_trigger_finished(self) -> None:
+        self.runtime_state_value.setText("空闲")
+        self.current_task_value.setText("-")
+        if hasattr(self, "trigger_toggle_button"):
+            self.trigger_toggle_button.setText("启动图像触发")
+        if hasattr(self, "trigger_state_label"):
+            self.trigger_state_label.setText("未运行")
+        self._set_busy(False)
+
+    def _on_probe_finished(self, ok: bool, message: str) -> None:
+        if ok:
+            self.connection_value.setText(self.ports.get(self.current_backend, "COM2"))
+        else:
+            self.connection_value.setText("未连接")
+        if hasattr(self, "settings_status_label"):
+            self.settings_status_label.setText(message if ok else f"连接失败: {message}")
+
+    def _append_log(self, message: str) -> None:
+        if hasattr(self, "log_view"):
+            self.log_view.appendPlainText(message)
+
+    def _open_task_config(self, task_name: str) -> None:
+        self.active_config_task_name = task_name
+        self._update_config_panel()
+
+    def _update_config_panel(self) -> None:
+        if not hasattr(self, "config_group") or not hasattr(self, "config_title_label"):
+            return
+
+        if not self.active_config_task_name:
+            self.config_title_label.hide()
+            self.config_group.hide()
+            self.config_placeholder_label.hide()
+            self.account_indexing_result_card.hide()
+            return
+
+        task_label = self.task_labels.get(self.active_config_task_name, self.active_config_task_name)
+        self.config_title_label.setText(f"{task_label}配置")
+        self.config_title_label.show()
+        self.config_group.show()
+
+        show_account_indexing = (
+            self.active_config_task_name == "AccountIndexing" and self.pending_account_indexing_result is not None
+        )
+        self.account_indexing_result_card.setVisible(show_account_indexing)
+        self.config_placeholder_label.setVisible(not show_account_indexing)
+
+    def _on_account_indexing_staged(self, summary: dict) -> None:
+        self.pending_account_indexing_result = dict(summary)
+        total = int(summary.get("character_count_total", 0))
+        self.account_indexing_count_label.setText(f"本次角色总数：{total}")
+        self._update_config_panel()
+
+    def _clear_account_indexing_staged_result(self) -> None:
+        self.pending_account_indexing_result = None
+        self.account_indexing_count_label.setText("本次角色总数：-")
+        self._update_config_panel()
+
+    def _open_account_indexing_characters_dir(self) -> None:
+        summary = self.pending_account_indexing_result or {}
+        characters_dir = str(summary.get("characters_dir", "")).strip()
+        if not characters_dir:
+            self._append_log("[Launcher] missing staged characters directory")
+            return
+        try:
+            os.startfile(characters_dir)  # type: ignore[attr-defined]
+        except Exception as exc:
+            self._append_log(f"[Launcher] failed to open staged characters directory: {exc}")
+
+    def _save_account_indexing_staging(self) -> None:
+        summary = self.pending_account_indexing_result or {}
+        session_id = str(summary.get("session_id", "")).strip()
+        if not session_id:
+            self._append_log("[Launcher] missing staged account indexing session")
+            return
+        try:
+            self.bridge.save_account_indexing_staging(session_id)
+        except Exception as exc:
+            self._append_log(f"[Launcher] save account indexing staging failed: {exc}")
+            return
+        self._clear_account_indexing_staged_result()
+
+    def _discard_account_indexing_staging(self) -> None:
+        summary = self.pending_account_indexing_result or {}
+        session_id = str(summary.get("session_id", "")).strip()
+        if not session_id:
+            self._append_log("[Launcher] missing staged account indexing session")
+            return
+        try:
+            self.bridge.discard_account_indexing_staging(session_id)
+        except Exception as exc:
+            self._append_log(f"[Launcher] discard account indexing staging failed: {exc}")
+            return
+        self._clear_account_indexing_staged_result()
+
+    def closeEvent(self, event) -> None:
+        self._unregister_global_hotkeys()
+        super().closeEvent(event)

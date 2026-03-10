@@ -15,6 +15,9 @@ import random
 from typing import Optional, Any, Tuple
 from .schema import WorkflowStep, ClickAction, WaitAction, PressAction, ScrollAction, WaitImageAction, ClickDetectedAction, MoveAction, CaptureROIAction
 
+DEFAULT_CLICK_DETECT_TIMEOUT_MS = 1000
+DEFAULT_CLICK_DETECT_POLL_INTERVAL_MS = 100
+
 
 def calculate_safe_click_roi(roi: Tuple[int, int, int, int], shrink_percent: float = 0.10) -> Tuple[int, int, int, int]:
     """
@@ -323,8 +326,8 @@ class ActionDispatcher:
         """
         Dispatch a click_detected action at detected image center with random offset.
 
-        Performs single-shot detection and clicks the center of matched region
-        with configurable random offset for anti-detection purposes.
+        Polls detection within timeout and clicks the center of matched region
+        when detected.
 
         Args:
             action: ClickDetectedAction with image, roi, threshold, random_offset
@@ -339,21 +342,40 @@ class ActionDispatcher:
             raise ExecutionError("Cannot click_detected: no vision engine available")
 
         try:
-            # Capture screenshot
-            screenshot = self._capture_screenshot()
+            timeout_ms = getattr(action, 'timeout_ms', DEFAULT_CLICK_DETECT_TIMEOUT_MS)
+            poll_interval_ms = getattr(action, 'poll_interval_ms', DEFAULT_CLICK_DETECT_POLL_INTERVAL_MS)
+            timeout_sec = timeout_ms / 1000.0
+            poll_interval_sec = poll_interval_ms / 1000.0
+            start_time = time.monotonic()
+            deadline = start_time + timeout_sec
 
-            # Find element
-            found, confidence, location = self.vision.find_element(
-                screenshot,
-                action.image,
-                roi=action.roi,
-                threshold=action.threshold
-            )
+            found = False
+            confidence = 0.0
+            location = (0, 0)
+            attempts = 0
+
+            print(f"[5C Debug] Polling click_detected: timeout={timeout_ms}ms, poll={poll_interval_ms}ms")
+
+            while time.monotonic() < deadline:
+                attempts += 1
+                screenshot = self._capture_screenshot()
+                found, confidence, location = self.vision.find_element(
+                    screenshot,
+                    action.image,
+                    roi=action.roi,
+                    threshold=action.threshold
+                )
+
+                if found:
+                    break
+
+                time.sleep(poll_interval_sec)
 
             if not found:
+                elapsed_ms = int((time.monotonic() - start_time) * 1000)
                 raise ExecutionError(
                     f"click_detected failed: '{action.image}' not found in ROI {action.roi} "
-                    f"(confidence: {confidence:.2f})"
+                    f"(confidence: {confidence:.2f}, timeout={timeout_ms}ms, elapsed={elapsed_ms}ms, attempts={attempts})"
                 )
 
             # 使用检测到的匹配位置作为ROI，在安全区域内随机点击

@@ -1,6 +1,6 @@
 {
-    "open_esc_menu": {
-        "desc": "open_esc_menu",
+    "press_esc_first": {
+        "desc": "press_esc_first",
         "action": {
             "type": "KeyPress",
             "param": {
@@ -8,11 +8,110 @@
             }
         },
         "next": [
-            "wait_after_esc"
+            "wait_after_first_esc"
         ]
     },
-    "wait_after_esc": {
-        "desc": "wait_after_esc",
+    "wait_after_first_esc": {
+        "desc": "wait_after_first_esc",
+        "action": {
+            "type": "Wait",
+            "param": {
+                "duration_ms": 120
+            }
+        },
+        "next": [
+            "detect_switch_after_first_esc"
+        ]
+    },
+    "detect_switch_after_first_esc": {
+        "desc": "detect_switch_after_first_esc",
+        "recognition": {
+            "type": "Custom",
+            "custom_recognition": "SwitchCharacterVisible",
+            "param": {
+                "template": "assets/resource/image/switchCharacter.bmp",
+                "roi": [
+                    575,
+                    907,
+                    856,
+                    952
+                ],
+                "threshold": 0.75,
+                "timeout_ms": 1400,
+                "poll_interval_ms": 100
+            }
+        },
+        "on_true": "wait_before_resolve_account_tag",
+        "on_false": "recheck_switch_before_second_esc"
+    },
+    "recheck_switch_before_second_esc": {
+        "desc": "recheck_switch_before_second_esc",
+        "recognition": {
+            "type": "Custom",
+            "custom_recognition": "SwitchCharacterVisible",
+            "param": {
+                "template": "assets/resource/image/switchCharacter.bmp",
+                "roi": [
+                    575,
+                    907,
+                    856,
+                    952
+                ],
+                "threshold": 0.72,
+                "timeout_ms": 800,
+                "poll_interval_ms": 100
+            }
+        },
+        "on_true": "wait_before_resolve_account_tag",
+        "on_false": "press_esc_second"
+    },
+    "press_esc_second": {
+        "desc": "press_esc_second",
+        "action": {
+            "type": "KeyPress",
+            "param": {
+                "key": "esc"
+            }
+        },
+        "next": [
+            "wait_after_second_esc"
+        ]
+    },
+    "wait_after_second_esc": {
+        "desc": "wait_after_second_esc",
+        "action": {
+            "type": "Wait",
+            "param": {
+                "duration_ms": 120
+            }
+        },
+        "next": [
+            "detect_switch_after_second_esc"
+        ]
+    },
+    "detect_switch_after_second_esc": {
+        "desc": "detect_switch_after_second_esc",
+        "recognition": {
+            "type": "Custom",
+            "custom_recognition": "SwitchCharacterVisible",
+            "param": {
+                "template": "assets/resource/image/switchCharacter.bmp",
+                "roi": [
+                    575,
+                    907,
+                    856,
+                    952
+                ],
+                "threshold": 0.75,
+                "timeout_ms": 1400,
+                "poll_interval_ms": 100
+            }
+        },
+        "on_true": "wait_before_resolve_account_tag",
+        "on_false": "workflow_complete"
+    },
+    "wait_before_resolve_account_tag": {
+        "desc": "wait_before_resolve_account_tag",
         "action": {
             "type": "Wait",
             "param": {
@@ -20,14 +119,14 @@
             }
         },
         "next": [
-            "capture_account_tag"
+            "resolve_account_tag"
         ]
     },
-    "capture_account_tag": {
-        "desc": "capture_account_tag",
+    "resolve_account_tag": {
+        "desc": "resolve_account_tag",
         "recognition": {
             "type": "Custom",
-            "custom_recognition": "CaptureROI",
+            "custom_recognition": "ResolveAccountByTag",
             "param": {
                 "roi": [
                     666,
@@ -35,19 +134,312 @@
                     772,
                     902
                 ],
-                "output_key": "account_tag_image"
+                "phash_threshold": 10,
+                "db_path": "data/accounts.db",
+                "data_dir": "data",
+                "staging_mode": true
+            }
+        },
+        "on_true": "click_switch_character",
+        "on_false": "click_switch_character"
+    },
+    "click_switch_character": {
+        "desc": "click_switch_character",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "assets/resource/image/switchCharacter.bmp",
+                "roi": [
+                    575,
+                    907,
+                    856,
+                    952
+                ],
+                "threshold": 0.8
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {
+                "shrink_percent": 0.1,
+                "timeout_ms": 1000,
+                "poll_interval_ms": 100
             }
         },
         "next": [
-            "match_or_create_account"
+            "wait_after_switch_click"
         ]
     },
-    "match_or_create_account": {
-        "desc": "match_or_create_account",
+    "wait_after_switch_click": {
+        "desc": "wait_after_switch_click",
         "action": {
             "type": "Wait",
             "param": {
-                "duration_ms": 100
+                "duration_ms": 450
+            }
+        },
+        "next": [
+            "record_first_page"
+        ]
+    },
+    "record_first_page": {
+        "desc": "record_first_page",
+        "action": {
+            "type": "Custom",
+            "custom_action": "RecordVisibleCharacters",
+            "param": {
+                "staging_mode": true,
+                "skip_first_slot": true,
+                "only_occupied": true,
+                "dedupe": true,
+                "occupancy_mode": "anchor_color",
+                "anchor_rgb": [
+                    101,
+                    96,
+                    70
+                ],
+                "anchor_tolerance": 6,
+                "anchor_min_pixels": 1,
+                "anchor_min_ratio": 0.0,
+                "dedupe_similarity_threshold": 0.995,
+                "dedupe_mad_threshold": 4.0,
+                "dedupe_center_similarity_threshold": 0.995,
+                "dedupe_center_mad_threshold": 4.0,
+                "dedupe_max_shift": 3,
+                "dedupe_text_hamming_threshold": 6,
+                "dedupe_center_hamming_threshold": 6,
+                "dedupe_fusion_threshold": 0.97
+            }
+        },
+        "next": [
+            "detect_incomplete_first_page"
+        ]
+    },
+    "detect_incomplete_first_page": {
+        "desc": "detect_incomplete_first_page",
+        "recognition": {
+            "type": "Custom",
+            "custom_recognition": "FirstPageIncomplete",
+            "param": {
+                "occupancy_mode": "anchor_color",
+                "anchor_rgb": [
+                    101,
+                    96,
+                    70
+                ],
+                "anchor_tolerance": 6,
+                "anchor_min_pixels": 1,
+                "anchor_min_ratio": 0.0
+            }
+        },
+        "on_true": "finalize_account_index",
+        "on_false": "move_scroll_anchor"
+    },
+    "move_scroll_anchor": {
+        "desc": "move_scroll_anchor",
+        "action": {
+            "type": "Move",
+            "param": {
+                "target": [
+                    1689,
+                    702
+                ]
+            }
+        },
+        "next": [
+            "wait_after_move_scroll_anchor"
+        ]
+    },
+    "wait_after_move_scroll_anchor": {
+        "desc": "wait_after_move_scroll_anchor",
+        "action": {
+            "type": "Wait",
+            "param": {
+                "duration_ms": 200
+            }
+        },
+        "next": [
+            "scroll_down_three_ticks"
+        ]
+    },
+    "scroll_down_three_ticks": {
+        "desc": "scroll_down_three_ticks",
+        "action": {
+            "type": "Scroll",
+            "param": {
+                "direction": "down",
+                "ticks": 1
+            }
+        },
+        "next": [
+            "detect_bottom_after_scroll"
+        ]
+    },
+    "detect_bottom_after_scroll": {
+        "desc": "detect_bottom_after_scroll",
+        "recognition": {
+            "type": "Custom",
+            "custom_recognition": "BottomReached",
+            "param": {
+                "template": "assets/resource/image/Buttom.bmp",
+                "roi": [
+                    1682,
+                    815,
+                    1698,
+                    861
+                ],
+                "threshold": 0.95
+            }
+        },
+        "on_true": "record_bottom_page",
+        "on_false": "record_non_bottom_page"
+    },
+    "record_non_bottom_page": {
+        "desc": "record_non_bottom_page",
+        "action": {
+            "type": "Custom",
+            "custom_action": "RecordVisibleCharacters",
+            "param": {
+                "staging_mode": true,
+                "skip_first_slot": false,
+                "only_occupied": true,
+                "dedupe": true,
+                "occupancy_mode": "anchor_color",
+                "anchor_rgb": [
+                    101,
+                    96,
+                    70
+                ],
+                "anchor_tolerance": 6,
+                "anchor_min_pixels": 1,
+                "anchor_min_ratio": 0.0,
+                "dedupe_similarity_threshold": 0.995,
+                "dedupe_mad_threshold": 4.0,
+                "dedupe_center_similarity_threshold": 0.995,
+                "dedupe_center_mad_threshold": 4.0,
+                "dedupe_max_shift": 3,
+                "dedupe_text_hamming_threshold": 6,
+                "dedupe_center_hamming_threshold": 6,
+                "dedupe_fusion_threshold": 0.97
+            }
+        },
+        "next": [
+            "increment_scroll_loop"
+        ]
+    },
+    "increment_scroll_loop": {
+        "desc": "increment_scroll_loop",
+        "action": {
+            "type": "Custom",
+            "custom_action": "IncrementScrollLoop",
+            "param": {}
+        },
+        "next": [
+            "check_scroll_loop_limit"
+        ]
+    },
+    "check_scroll_loop_limit": {
+        "desc": "check_scroll_loop_limit",
+        "recognition": {
+            "type": "Custom",
+            "custom_recognition": "ScrollLoopExceeded",
+            "param": {
+                "max_loops": 8
+            }
+        },
+        "on_true": "finalize_account_index",
+        "on_false": "move_scroll_anchor"
+    },
+    "record_bottom_page": {
+        "desc": "record_bottom_page",
+        "action": {
+            "type": "Custom",
+            "custom_action": "RecordVisibleCharacters",
+            "param": {
+                "staging_mode": true,
+                "skip_first_slot": false,
+                "only_occupied": true,
+                "dedupe": true,
+                "occupancy_mode": "anchor_color",
+                "anchor_rgb": [
+                    101,
+                    96,
+                    70
+                ],
+                "anchor_tolerance": 6,
+                "anchor_min_pixels": 1,
+                "anchor_min_ratio": 0.0,
+                "dedupe_similarity_threshold": 0.995,
+                "dedupe_mad_threshold": 4.0,
+                "dedupe_center_similarity_threshold": 0.995,
+                "dedupe_center_mad_threshold": 4.0,
+                "dedupe_max_shift": 3,
+                "dedupe_text_hamming_threshold": 6,
+                "dedupe_center_hamming_threshold": 6,
+                "dedupe_fusion_threshold": 0.97
+            }
+        },
+        "next": [
+            "finalize_account_index"
+        ]
+    },
+    "finalize_account_index": {
+        "desc": "finalize_account_index",
+        "action": {
+            "type": "Custom",
+            "custom_action": "FinalizeAccountIndex",
+            "param": {
+                "db_path": "data/accounts.db",
+                "data_dir": "data",
+                "staging_mode": true
+            }
+        },
+        "next": [
+            "press_esc_finalize_first"
+        ]
+    },
+    "press_esc_finalize_first": {
+        "desc": "press_esc_finalize_first",
+        "action": {
+            "type": "KeyPress",
+            "param": {
+                "key": "esc"
+            }
+        },
+        "next": [
+            "wait_after_finalize_esc_first"
+        ]
+    },
+    "wait_after_finalize_esc_first": {
+        "desc": "wait_after_finalize_esc_first",
+        "action": {
+            "type": "Wait",
+            "param": {
+                "duration_ms": 180
+            }
+        },
+        "next": [
+            "press_esc_finalize_second"
+        ]
+    },
+    "press_esc_finalize_second": {
+        "desc": "press_esc_finalize_second",
+        "action": {
+            "type": "KeyPress",
+            "param": {
+                "key": "esc"
+            }
+        },
+        "next": [
+            "wait_after_finalize_esc_second"
+        ]
+    },
+    "wait_after_finalize_esc_second": {
+        "desc": "wait_after_finalize_esc_second",
+        "action": {
+            "type": "Wait",
+            "param": {
+                "duration_ms": 180
             }
         },
         "next": [
@@ -66,7 +458,7 @@
     "account_indexingMain": {
         "desc": "account_indexing main entry",
         "next": [
-            "open_esc_menu"
+            "press_esc_first"
         ]
     }
 }

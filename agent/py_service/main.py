@@ -15,6 +15,8 @@ import sys
 import os
 import argparse
 import time
+import logging
+import re
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass, field
@@ -27,6 +29,7 @@ sys.path.insert(0, str(project_root))
 try:
     from agent.py_service.register import register_all_modules, Registry, RecognitionResult
     from agent.py_service.pkg.ferrum.controller import FerrumController
+    from agent.py_service.pkg.makcu.controller import MakcuController
     from agent.py_service.pkg.vision.engine import VisionEngine
     from agent.py_service.pkg.vision.frame_cache import FrameCache
 except ImportError as e:
@@ -52,6 +55,25 @@ class ConfigError(ServiceError):
 class InitializationError(ServiceError):
     """初始化错误"""
     pass
+
+
+def configure_debug_mode(enabled: bool) -> None:
+    """
+    Configure global debug logging mode.
+
+    When enabled, turns on verbose logger output and sets env flags
+    that downstream modules can read.
+    """
+    if enabled:
+        os.environ["FERRUMBOT_DEBUG"] = "1"
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            force=True,
+        )
+        print("[调试] DEBUG 模式已开启（全日志）")
+    else:
+        os.environ.pop("FERRUMBOT_DEBUG", None)
 
 
 def load_interface_config(config_path: Optional[str] = None) -> Dict[str, Any]:
@@ -213,12 +235,30 @@ class InitializedComponents:
     frame_cache: Optional[FrameCache] = None
 
 
+def create_hardware_controller(controller_config: Dict[str, Any]):
+    """Create hardware controller from interface config."""
+    serial_config = controller_config.get("serial", {})
+    driver = str(controller_config.get("driver", "ferrum")).lower()
+
+    controller_cls = FerrumController
+    if driver == "makcu":
+        controller_cls = MakcuController
+
+    return controller_cls(
+        port=serial_config.get("port", "COM2"),
+        baudrate=serial_config.get("baudrate", 115200),
+        timeout=serial_config.get("timeout", 1.0),
+    )
+
+
 def initialize(
     config_path: Optional[str] = None,
     controller_name: Optional[str] = None,
+    controller_override: Optional[Dict[str, Any]] = None,
     resource_name: Optional[str] = None,
     skip_hardware: bool = False,
-    test_mode: bool = False
+    test_mode: bool = False,
+    debug_mode: bool = False
 ) -> InitializedComponents:
     """
     初始化所有组件
@@ -238,6 +278,8 @@ def initialize(
     """
     print(f"\n{'='*50}")
     print(f"[服务] 启动 FerrumBot v{VERSION}")
+    if debug_mode:
+        print("[调试] 初始化阶段启用调试日志")
     print(f"{'='*50}\n")
 
     # 1. 加载配置
@@ -248,6 +290,10 @@ def initialize(
 
     # 2. 获取控制器和资源配置
     controller_config = get_controller_config(config, controller_name)
+    if controller_override:
+        controller_config = json.loads(json.dumps(controller_config))
+        serial_override = controller_override.get("serial", {})
+        controller_config.setdefault("serial", {}).update(serial_override)
     resource_config = get_resource_config(config, resource_name)
 
     print(f"[配置] 使用控制器: {controller_config.get('name')}")
@@ -260,6 +306,13 @@ def initialize(
         recognitions = Registry.list_recognitions()
         actions = Registry.list_actions()
         print(f"[注册] 已加载 {len(recognitions)} 个识别器, {len(actions)} 个动作")
+        if debug_mode:
+            print("[调试] 已注册识别器:")
+            for name in sorted(recognitions.keys()):
+                print(f"  - {name}")
+            print("[调试] 已注册动作:")
+            for name in sorted(actions.keys()):
+                print(f"  - {name}")
     except Exception as e:
         print(f"[警告] 模块注册过程中出现错误: {e}")
         # 非致命错误，继续初始化
@@ -278,13 +331,8 @@ def initialize(
     if not skip_hardware and not test_mode:
         print("\n[硬件] 初始化硬件控制器...")
         try:
-            # 从配置创建控制器
             serial_config = controller_config.get('serial', {})
-            hardware_controller = FerrumController(
-                port=serial_config.get('port', 'COM2'),
-                baudrate=serial_config.get('baudrate', 115200),
-                timeout=serial_config.get('timeout', 1.0)
-            )
+            hardware_controller = create_hardware_controller(controller_config)
             print(f"[硬件] 已连接到 {serial_config.get('port', 'COM2')}")
         except Exception as e:
             if test_mode:
@@ -426,6 +474,35 @@ def load_pipeline(pipeline_path: str) -> Dict[str, Any]:
     return pipeline
 
 
+def _to_snake_case(name: str) -> str:
+    text = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", str(name))
+    return text.replace("-", "_").lower()
+
+
+def resolve_entry_node(task_name: str, configured_entry: str, pipeline: Dict[str, Any]) -> str:
+    """Resolve the real entry node name present in the pipeline."""
+    if configured_entry in pipeline:
+        return configured_entry
+
+    normalized_keys = {str(key).lower(): str(key) for key in pipeline.keys()}
+    configured_lower = str(configured_entry).lower()
+    if configured_lower in normalized_keys:
+        return normalized_keys[configured_lower]
+
+    fallback_candidates = [
+        f"{_to_snake_case(task_name)}Main",
+        f"{_to_snake_case(configured_entry.removesuffix('Main'))}Main" if configured_entry.endswith("Main") else "",
+    ]
+    for candidate in fallback_candidates:
+        if candidate and candidate in pipeline:
+            return candidate
+        candidate_lower = candidate.lower()
+        if candidate_lower in normalized_keys:
+            return normalized_keys[candidate_lower]
+
+    return configured_entry
+
+
 @dataclass
 class ExecutionContext:
     """Pipeline 执行上下文"""
@@ -440,7 +517,11 @@ def run_task(
     task_name: str,
     context: Optional[Dict[str, Any]] = None,
     config_path: Optional[str] = None,
-    test_mode: bool = False
+    controller_name: Optional[str] = None,
+    controller_override: Optional[Dict[str, Any]] = None,
+    test_mode: bool = False,
+    debug_mode: bool = False,
+    stop_event: Any = None,
 ) -> bool:
     """
     执行指定任务
@@ -460,8 +541,11 @@ def run_task(
     try:
         components = initialize(
             config_path=config_path,
+            controller_name=controller_name,
+            controller_override=controller_override,
             test_mode=test_mode,
-            skip_hardware=test_mode
+            skip_hardware=test_mode,
+            debug_mode=debug_mode
         )
     except InitializationError as e:
         print(f"[错误] 初始化失败: {e}")
@@ -479,6 +563,8 @@ def run_task(
 
         print(f"[任务] 入口节点: {entry_node}")
         print(f"[任务] Pipeline: {pipeline_path}")
+        if debug_mode:
+            print(f"[调试] task config: {json.dumps(task_config, ensure_ascii=False)}")
     except ConfigError as e:
         print(f"[错误] 获取任务配置失败: {e}")
         return False
@@ -486,6 +572,12 @@ def run_task(
     # 3. 加载 Pipeline
     try:
         pipeline = load_pipeline(pipeline_path)
+        resolved_entry_node = resolve_entry_node(task_name, entry_node, pipeline)
+        if resolved_entry_node != entry_node:
+            print(f"[任务] 入口节点已解析: {entry_node} -> {resolved_entry_node}")
+            entry_node = resolved_entry_node
+        if debug_mode:
+            print(f"[调试] pipeline nodes ({len(pipeline)}): {', '.join(list(pipeline.keys())[:20])}")
     except ConfigError as e:
         print(f"[错误] 加载 Pipeline 失败: {e}")
         return False
@@ -496,12 +588,23 @@ def run_task(
         print(f"[测试] 可用节点: {list(pipeline.keys())[:5]}...")
         return True
 
-    # TODO: 实现完整的 Pipeline 执行逻辑
-    # 目前返回成功，实际执行将在后续实现
-    print("\n[信息] Pipeline 执行器完整实现待后续开发")
-    print("[信息] 当前仅提供框架和初始化功能")
+    # 5. 执行 Pipeline
+    try:
+        from agent.py_service.modules.workflow_executor.executor import execute_pipeline
 
-    return True
+        full_pipeline_path = project_root / pipeline_path
+        return bool(
+            execute_pipeline(
+                pipeline_path=full_pipeline_path,
+                entry_node=entry_node,
+                hardware_controller=components.hardware_controller,
+                vision_engine=components.vision_engine,
+                stop_event=stop_event,
+            )
+        )
+    except Exception as e:
+        print(f"[错误] Pipeline 执行失败: {e}")
+        return False
 
 
 def main():
@@ -547,8 +650,14 @@ def main():
         action='store_true',
         help='测试模式 (不执行实际操作)'
     )
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='开启调试模式（全日志输出）'
+    )
 
     args = parser.parse_args()
+    configure_debug_mode(args.debug)
 
     try:
         if args.list_tasks:
@@ -571,7 +680,8 @@ def main():
             components = initialize(
                 config_path=args.config,
                 test_mode=True,
-                skip_hardware=True
+                skip_hardware=True,
+                debug_mode=args.debug
             )
             print("\n[成功] 初始化测试通过")
             print(f"  - 配置项: {len(components.config)} 项")
@@ -585,7 +695,9 @@ def main():
             success = run_task(
                 task_name=args.task,
                 config_path=args.config,
-                test_mode=args.test_mode
+                controller_name=None,
+                test_mode=args.test_mode,
+                debug_mode=args.debug
             )
             return 0 if success else 1
 

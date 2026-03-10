@@ -156,6 +156,25 @@ class TestPipelineValidation:
         assert entry_in_pipeline, f"Entry node '{entry}' not found in pipeline"
         print(f"[OK] Task config valid: entry='{entry}' matches pipeline")
 
+    def test_first_confirm_has_disappear_verification_chain(self):
+        """验证首个确认弹窗点击后会检查是否消失，并在必要时重试点击。"""
+        pipeline_path = project_root / "assets" / "resource" / "pipeline" / "guild_donation.json"
+        with open(pipeline_path, 'r', encoding='utf-8') as f:
+            pipeline = json.load(f)
+
+        assert "handle_first_confirm" in pipeline
+        assert "verify_first_confirm_disappear" in pipeline
+        assert "retry_handle_first_confirm" in pipeline
+        assert "verify_first_confirm_disappear_after_retry" in pipeline
+
+        first = pipeline["handle_first_confirm"]
+        assert first.get("next") == ["wait_after_handle_first_confirm_click"]
+
+        verify = pipeline["verify_first_confirm_disappear"]
+        assert verify.get("recognition", {}).get("param", {}).get("state") == "disappear"
+        assert verify.get("next") == ["stage4_first_donation"]
+        assert verify.get("timeout") == 600
+
 
 class TestPipelineExecutor:
     """Pipeline Executor 功能测试."""

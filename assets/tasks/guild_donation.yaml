@@ -31,7 +31,7 @@ steps:
   - step_id: wait_after_move
     action:
       type: wait
-      duration_ms: 100
+      duration_ms: 50
     next: open_guild_menu
 
   # Step 1: Open guild menu with Alt+U
@@ -55,12 +55,12 @@ steps:
     action:
       type: wait_image
       state: appear
-      image: assets/guild_ui.bmp
+      image: assets/resource/image/guild_ui.bmp
       roi: [546, 803, 903, 835]
       threshold: 0.7
       timeout_ms: 5000
       poll_interval_ms: 100
-    next: check_first_confirm
+    next: wait_before_handle_first_confirm
     recovery:
       on_timeout: open_guild_menu
       max_escalations: 3
@@ -68,31 +68,112 @@ steps:
         phase: donation
         step_type: wait_menu
 
-  # Step 3: Check for first-time guild confirm popup
-  # ROI: 1229,657,1331,937, 宽高(102,280)
-  # If detected, handle it; if not, proceed to Stage 4
-  - step_id: check_first_confirm
+  # Step 2.5: brief settle wait before first confirm click to avoid early-click miss
+  - step_id: wait_before_handle_first_confirm
     action:
       type: wait
-      duration_ms: 100
-    on_true: handle_first_confirm
-    on_false: stage4_first_donation
-    condition:
-      type: image
-      template: assets/guild_first_confirm.bmp
-      roi: [1229, 657, 1331, 937]
-      threshold: 0.8
+      duration_ms: 220
+    next: handle_first_confirm
 
-  # Step 3a: Handle first confirm popup (if detected)
-  # 在安全区域内随机点击（缩小10%避免边缘点击）
+  # Step 3: Handle first confirm popup if present (detect + click)
+  # 基于检测结果点击模板中心，避免 UI 位置浮动导致硬编码失效
+  # 点不到则按 on_error 继续主流程
   - step_id: handle_first_confirm
     action:
       type: click_detected
-      image: assets/guild_first_confirm.bmp
+      image: assets/resource/image/guild_first_confirm.bmp
       roi: [1229, 657, 1331, 937]
       threshold: 0.8
-      shrink_percent: 0.10
+      timeout_ms: 1000
+      poll_interval_ms: 100
+      center_click: true
+    next: wait_after_handle_first_confirm_click
+    on_error:
+      - handle_first_confirm_fallback_click
+
+  - step_id: wait_after_handle_first_confirm_click
+    action:
+      type: wait
+      duration_ms: 120
+    next: verify_first_confirm_disappear
+
+  - step_id: verify_first_confirm_disappear
+    action:
+      type: wait_image
+      state: disappear
+      image: assets/resource/image/guild_first_confirm.bmp
+      roi: [1229, 657, 1331, 937]
+      threshold: 0.8
+      timeout_ms: 600
+      poll_interval_ms: 100
     next: stage4_first_donation
+    recovery:
+      on_timeout: retry_handle_first_confirm
+      max_escalations: 1
+
+  - step_id: retry_handle_first_confirm
+    action:
+      type: click_detected
+      image: assets/resource/image/guild_first_confirm.bmp
+      roi: [1229, 657, 1331, 937]
+      threshold: 0.8
+      timeout_ms: 1000
+      poll_interval_ms: 100
+      center_click: true
+    next: wait_after_retry_handle_first_confirm
+    on_error:
+      - handle_first_confirm_fallback_click
+
+  - step_id: wait_after_retry_handle_first_confirm
+    action:
+      type: wait
+      duration_ms: 120
+    next: verify_first_confirm_disappear_after_retry
+
+  - step_id: verify_first_confirm_disappear_after_retry
+    action:
+      type: wait_image
+      state: disappear
+      image: assets/resource/image/guild_first_confirm.bmp
+      roi: [1229, 657, 1331, 937]
+      threshold: 0.8
+      timeout_ms: 600
+      poll_interval_ms: 100
+    next: stage4_first_donation
+    recovery:
+      on_timeout: handle_first_confirm_fallback_click
+      max_escalations: 1
+
+  # Step 3b: Fallback click for first confirm popup when template match times out
+  # Click center of known confirm ROI to clear potential overlay
+  - step_id: handle_first_confirm_fallback_click
+    action:
+      type: click
+      x: 1280
+      y: 797
+      random_y: 8
+    next: wait_after_first_confirm_fallback
+
+  # Step 3c: Allow UI settle after fallback confirm click
+  - step_id: wait_after_first_confirm_fallback
+    action:
+      type: wait
+      duration_ms: 150
+    next: verify_first_confirm_disappear_after_fallback
+
+  - step_id: verify_first_confirm_disappear_after_fallback
+    action:
+      type: wait_image
+      state: disappear
+      image: assets/resource/image/guild_first_confirm.bmp
+      roi: [1229, 657, 1331, 937]
+      threshold: 0.8
+      timeout_ms: 600
+      poll_interval_ms: 100
+    next: stage4_first_donation
+    recovery:
+      on_timeout: stage4_first_donation
+      max_escalations: 1
 
   # Step 4: Stage 4 - Guild donation workflow
   # ROI: 1863,450,2019,483, 宽高(156,33)
@@ -100,10 +181,19 @@ steps:
   - step_id: stage4_first_donation
     action:
       type: click_detected
-      image: assets/guild_first_donation.bmp
+      image: assets/resource/image/guild_first_donation.bmp
       roi: [1863, 450, 2019, 483]
       threshold: 0.8
+      timeout_ms: 1000
+      poll_interval_ms: 100
       shrink_percent: 0.10
+    next: wait_before_stage4_second
+
+  # Step 4a.5: Short settle wait for popup transition before second detection
+  - step_id: wait_before_stage4_second
+    action:
+      type: wait
+      duration_ms: 120
     next: stage4_second_donation
 
   # Step 4b: Second donation detection
@@ -112,10 +202,19 @@ steps:
   - step_id: stage4_second_donation
     action:
       type: click_detected
-      image: assets/guild_first_donation2.bmp
+      image: assets/resource/image/guild_first_donation2.bmp
       roi: [954, 702, 1077, 742]
-      threshold: 0.8
+      threshold: 0.7
+      timeout_ms: 1000
+      poll_interval_ms: 100
       shrink_percent: 0.10
+    next: wait_after_stage4_second_click
+
+  # Step 4b.5: allow second-donation click to settle before ESC
+  - step_id: wait_after_stage4_second_click
+    action:
+      type: wait
+      duration_ms: 180
     next: press_esc_after_stage4
 
   # Step 4c: 按 ESC 关闭弹窗
@@ -125,65 +224,42 @@ steps:
       key_name: esc
     next: wait_after_stage4
 
-  # Step 4d: 等待 UI 响应（50ms 延迟）
+  # Step 4d: 等待 UI 响应（20ms 延迟）
   - step_id: wait_after_stage4
     action:
       type: wait
-      duration_ms: 50
-    next: check_sec_donation
-
-  # Step 5: Check for secondary donation (支援金捐献)
-  # ROI: 1551,606,1693,635, 宽高(142,29)
-  # If detected, proceed to click; if not, output "当日无支援" and exit
-  - step_id: check_sec_donation
-    action:
-      type: wait
       duration_ms: 100
-    on_true: click_sec_donation1
-    on_false: no_support_today
-    condition:
-      type: image
-      template: assets/guild_sec_donation1.bmp
-      roi: [1551, 606, 1693, 635]
-      threshold: 0.8
+    next: click_sec_donation1
 
-  # Step 5a: Click guild_sec_donation1 (if detected)
+  # Step 5: Click guild_sec_donation1 if present (detect + click)
   # y_offset: 0.5 限制点击区域，跳过上二分之一不可点击区域
   - step_id: click_sec_donation1
     action:
       type: click_detected
-      image: assets/guild_sec_donation1.bmp
+      image: assets/resource/image/guild_sec_donation1.bmp
       roi: [1551, 606, 1693, 635]
       threshold: 0.8
-      shrink_percent: 0.10
-      y_offset: 0.5
-    next: wait_sec_donation2
-
-  # Step 5b: Wait for guild_sec_donation2 to appear (1s timeout, fast polling)
-  # ROI: 1010,602,1253,794, 宽高(243,192)
-  # Wait up to 1 second with 100ms poll interval
-  - step_id: wait_sec_donation2
-    action:
-      type: wait_image
-      state: appear
-      image: assets/guild_sec_donation2.bmp
-      roi: [1010, 602, 1253, 794]
       timeout_ms: 1000
       poll_interval_ms: 100
-      threshold: 0.7
+      shrink_percent: 0.10
+      y_offset: 0.5
     next: click_sec_donation2
+    on_error:
+      - no_support_today
 
-  # Step 5c: Click detected guild_sec_donation2 at random position in ROI
+  # Step 5b: Click detected guild_sec_donation2 at random position in ROI
   - step_id: click_sec_donation2
     action:
       type: click_detected
-      image: assets/guild_sec_donation2.bmp
+      image: assets/resource/image/guild_sec_donation2.bmp
       roi: [1010, 602, 1253, 794]
       threshold: 0.7
+      timeout_ms: 1000
+      poll_interval_ms: 100
       shrink_percent: 0.10
     next: wait_after_sec_donation2
 
-  # Step 5c-delay: 等待 UI 响应（300ms 延迟）
+  # Step 5c-delay: 等待 UI 响应（20ms 延迟）
   - step_id: wait_after_sec_donation2
     action:
       type: wait
@@ -212,9 +288,9 @@ steps:
     action:
       type: wait_image
       state: disappear
-      image: assets/guild_ui.bmp
+      image: assets/resource/image/guild_ui.bmp
       roi: [546, 803, 903, 835]
-      timeout_ms: 500
+      timeout_ms: 1000
       poll_interval_ms: 100
     next: workflow_complete
     recovery:
@@ -230,7 +306,7 @@ steps:
     on_false: workflow_complete
     condition:
       type: image
-      template: assets/guild_ui.bmp
+      template: assets/resource/image/guild_ui.bmp
       roi: [546, 803, 903, 835]
       threshold: 0.75
 
@@ -252,7 +328,7 @@ steps:
   - step_id: donation_complete
     action:
       type: wait
-      duration_ms: 100
+      duration_ms: 20
     next: write_donation_cache
 
   # Step 6a: Write character donation status to cache
@@ -278,9 +354,9 @@ steps:
     action:
       type: wait_image
       state: disappear
-      image: assets/guild_ui.bmp
+      image: assets/resource/image/guild_ui.bmp
       roi: [546, 803, 903, 835]
-      timeout_ms: 500
+      timeout_ms: 1000
       poll_interval_ms: 100
     next: workflow_complete
     recovery:
@@ -298,7 +374,7 @@ steps:
     on_false: workflow_complete
     condition:
       type: image
-      template: assets/guild_ui.bmp
+      template: assets/resource/image/guild_ui.bmp
       roi: [546, 803, 903, 835]
       threshold: 0.75
 

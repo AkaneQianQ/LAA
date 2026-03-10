@@ -1,14 +1,12 @@
-# Character Switch Workflow Configuration
-# Workflow for switching to a specific character from character selection screen
-#
-# This workflow:
-# - Identifies target character slot from visual hash comparison
-# - Handles scrolling to locate the target character
-# - Clicks the character and initiates login
-# - Waits for character to be online
+# Character Switch + Donation Workflow
+# Aligned flow:
+# 1) ESC detect switch button (2 attempts)
+# 2) Resolve account tag by pHash (must exist)
+# 3) First character (slot 0) donation with daily skip
+# 4-6) Remaining characters traversal handled by custom action
 
 name: character_switch
-start_step_id: verify_character_selection_screen
+start_step_id: press_esc_first
 
 wait_defaults:
   timeout_ms: 10000
@@ -16,180 +14,173 @@ wait_defaults:
   retry_interval_ms: 1000
 
 steps:
-  # Step 0: Verify we are on character selection screen
-  # RECOVERY ANCHOR: Stable entry point for character switch workflow
-  - step_id: verify_character_selection_screen
+  - step_id: press_esc_first
+    action:
+      type: press
+      key_name: esc
+    next: wait_after_esc_first
+
+  - step_id: wait_after_esc_first
+    action:
+      type: wait
+      duration_ms: 120
+    next: detect_switch_after_esc_first
+
+  - step_id: detect_switch_after_esc_first
+    recognition:
+      type: custom
+      custom_recognition: SwitchCharacterVisible
+      param:
+        template: assets/resource/image/switchCharacter.bmp
+        roi: [575, 907, 856, 952]
+        threshold: 0.75
+        timeout_ms: 1000
+        poll_interval_ms: 100
+    on_true: resolve_account_tag
+    on_false: press_esc_second
+
+  - step_id: press_esc_second
+    action:
+      type: press
+      key_name: esc
+    next: wait_after_esc_second
+
+  - step_id: wait_after_esc_second
+    action:
+      type: wait
+      duration_ms: 120
+    next: detect_switch_after_esc_second
+
+  - step_id: detect_switch_after_esc_second
+    recognition:
+      type: custom
+      custom_recognition: SwitchCharacterVisible
+      param:
+        template: assets/resource/image/switchCharacter.bmp
+        roi: [575, 907, 856, 952]
+        threshold: 0.75
+        timeout_ms: 1000
+        poll_interval_ms: 100
+    on_true: resolve_account_tag
+    on_false: switch_button_not_found_error
+
+  - step_id: resolve_account_tag
+    recognition:
+      type: custom
+      custom_recognition: ResolveAccountByTag
+      param:
+        roi: [666, 793, 772, 902]
+        phash_threshold: 10
+        db_path: data/accounts.db
+        data_dir: data
+        create_if_missing: false
+    on_true: check_first_character_done_today
+    on_false: account_not_indexed_error
+
+  - step_id: check_first_character_done_today
+    recognition:
+      type: custom
+      custom_recognition: AccountCharacterDoneToday
+      param:
+        slot_index: 0
+        db_path: data/accounts.db
+    on_true: process_remaining_characters
+    on_false: first_character_donation_entry
+
+  - step_id: first_character_donation_entry
+    action:
+      type: press
+      key_name: esc
+    next: wait_after_first_donation_esc
+
+  - step_id: wait_after_first_donation_esc
+    action:
+      type: wait
+      duration_ms: 120
+    next: wait_switch_button_disappear_for_first
+
+  - step_id: wait_switch_button_disappear_for_first
     action:
       type: wait_image
-      state: appear
-      image: assets/character_selection_ui.bmp
-      roi: [500, 500, 1000, 800]
-      threshold: 0.7
-      timeout_ms: 5000
+      state: disappear
+      image: assets/resource/image/switchCharacter.bmp
+      roi: [575, 907, 856, 952]
+      timeout_ms: 1000
       poll_interval_ms: 100
-    next: scroll_to_top
-    retry: 1
-    recovery:
-      anchor: true
-      audit_context:
-        phase: switch
-        critical: true
+    next: execute_first_character_donation
 
-  # Step 1: Scroll to top to ensure consistent starting position
-  - step_id: scroll_to_top
+  - step_id: execute_first_character_donation
     action:
-      type: scroll
-      direction: up
-      ticks: 10
-    next: wait_after_scroll_top
+      type: custom
+      custom_action: ExecuteDonation
+    next: mark_first_character_done
 
-  - step_id: wait_after_scroll_top
+  - step_id: mark_first_character_done
     action:
-      type: wait
-      duration_ms: 300
-    next: scan_current_visible_slots
+      type: custom
+      custom_action: MarkAccountCharacterDone
+      param:
+        slot_index: 0
+        db_path: data/accounts.db
+    next: process_remaining_characters
 
-  # Step 2: Scan currently visible slots to find target character
-  # Compare against database for target character hash
-  - step_id: scan_current_visible_slots
+  - step_id: process_remaining_characters
     action:
-      type: detect_character_in_slots
-      slots:
-        - roi: [904, 557, 1152, 624]
-          slot_id: 1_1
-        - roi: [1164, 557, 1412, 624]
-          slot_id: 1_2
-        - roi: [1425, 557, 1673, 624]
-          slot_id: 1_3
-        - roi: [904, 557, 1152, 624]
-          slot_id: 2_1
-        - roi: [1164, 557, 1412, 624]
-          slot_id: 2_2
-        - roi: [1425, 557, 1673, 624]
-          slot_id: 2_3
-    next: check_target_found
-
-  # Step 3: Check if target character was found in current view
-  - step_id: check_target_found
-    action:
-      type: wait
-      duration_ms: 100
-    on_true: click_target_character
-    on_false: scroll_and_continue_search
-    condition:
-      type: character_found
-      target_key: target_character_hash
-
-  # Step 4a: Target found - click on the character slot
-  # Uses detected position with safe-area randomization
-  - step_id: click_target_character
-    action:
-      type: click_detected_character
-      target_key: target_character_hash
-      shrink_percent: 0.10
-    next: wait_after_character_click
-
-  # Step 4b: Wait after character click
-  - step_id: wait_after_character_click
-    action:
-      type: wait
-      duration_ms: 200
-    next: click_login_button
-
-  # Step 5: Click the login button (yellow button)
-  # ROI: Login button area (1200, 880, 1700, 960)
-  - step_id: click_login_button
-    action:
-      type: click_detected
-      image: assets/btn_login_yellow.bmp
-      roi: [1200, 880, 1700, 960]
-      threshold: 0.8
-      shrink_percent: 0.10
-    next: wait_for_login_complete
-
-  # Step 6: Wait for login to complete (check for confirm popup or game screen)
-  # If popup appears, need to confirm character switch
-  - step_id: wait_for_login_complete
-    action:
-      type: wait_image
-      state: appear
-      image: assets/login_popup_confirm.bmp
-      roi: [1100, 700, 1500, 1100]
-      threshold: 0.7
-      timeout_ms: 3000
-      poll_interval_ms: 100
-    on_true: handle_login_confirm_popup
-    on_false: wait_for_game_load
-    next: handle_login_confirm_popup
-    recovery:
-      on_timeout: wait_for_game_load
-      max_escalations: 1
-
-  # Step 6a: Handle login confirm popup (character switch confirmation)
-  - step_id: handle_login_confirm_popup
-    action:
-      type: click_detected
-      image: assets/login_popup_confirm.bmp
-      roi: [1100, 700, 1500, 1100]
-      threshold: 0.7
-      shrink_percent: 0.10
-    next: wait_for_game_load
-
-  # Step 7: Wait for game to load (character appears in game world)
-  # Detect game UI elements that indicate successful login
-  - step_id: wait_for_game_load
-    action:
-      type: wait_image
-      state: appear
-      image: assets/game_ui_loaded.bmp
-      roi: [0, 0, 500, 500]
-      threshold: 0.7
-      timeout_ms: 30000
-      poll_interval_ms: 500
+      type: custom
+      custom_action: ProcessRemainingDonations
+      param:
+        db_path: data/accounts.db
+        switch_template: assets/resource/image/switchCharacter.bmp
+        switch_roi: [575, 907, 856, 952]
+        switch_timeout_ms: 1000
+        poll_interval_ms: 100
+        switch_check_template: assets/resource/image/CharacterSwitchCheck.bmp
+        switch_check_roi: [1308, 912, 1580, 947]
+        switch_check_threshold: 0.62
+        switch_check_timeout_ms: 1800
+        max_esc_open_attempts: 5
+        dedupe_similarity_threshold: 0.995
+        dedupe_mad_threshold: 4.0
+        dedupe_center_similarity_threshold: 0.995
+        dedupe_center_mad_threshold: 4.0
+        dedupe_text_hamming_threshold: 6
+        dedupe_center_hamming_threshold: 6
+        dedupe_fusion_threshold: 0.97
+        login_template: assets/resource/image/loginButton.bmp
+        login_roi: [1308, 912, 1441, 948]
+        confirm_template: assets/resource/image/ConfirmButton2.bmp
+        confirm_roi: [1176, 776, 1278, 812]
+        load_pixel_x: 973
+        load_pixel_y: 1146
+        load_pixel_rgb: [148, 12, 8]
+        load_pixel_tolerance: 18
+        load_color_timeout_ms: 20000
+        load_color_min_consecutive_hits: 2
+        safe_x: 1689
+        safe_y: 698
+        bottom_template: assets/resource/image/Buttom.bmp
+        bottom_roi: [1682, 815, 1698, 861]
+        bottom_threshold: 0.95
+        slot_click_settle_ms: 150
+        max_switch_loops: 24
     next: workflow_complete
-    recovery:
-      on_timeout: verify_character_selection_screen
-      max_escalations: 2
-      audit_context:
-        phase: switch
-        step_type: wait_game_load
 
-  # Step 4b (alt path): Scroll down and continue searching
-  - step_id: scroll_and_continue_search
-    action:
-      type: scroll
-      direction: down
-      ticks: 3
-    next: wait_after_scroll_search
-
-  - step_id: wait_after_scroll_search
-    action:
-      type: wait
-      duration_ms: 300
-    next: check_max_scroll_reached
-
-  # Step 4c: Check if maximum scroll reached (no more characters)
-  - step_id: check_max_scroll_reached
-    action:
-      type: wait
-      duration_ms: 100
-    on_true: character_not_found_error
-    on_false: scan_current_visible_slots
-    condition:
-      type: scroll_limit_reached
-      max_scroll_rows: 10
-
-  # Error step: Character not found after full scan
-  - step_id: character_not_found_error
+  - step_id: switch_button_not_found_error
     action:
       type: error
-      error_code: CHARACTER_NOT_FOUND
-      message: "Target character not found in account"
+      error_code: SWITCH_BUTTON_NOT_FOUND
+      message: "未检测到 switchCharacter.bmp，ESC 两次失败"
     next: null
 
-  # Step 8: Workflow complete - character switched successfully
+  - step_id: account_not_indexed_error
+    action:
+      type: error
+      error_code: ACCOUNT_TAG_UNKNOWN
+      message: "请录入账号信息"
+    next: null
+
   - step_id: workflow_complete
     action:
       type: wait
-      duration_ms: 100
+      duration_ms: 50
     next: null

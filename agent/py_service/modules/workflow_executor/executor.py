@@ -6,6 +6,8 @@ Workflow Executor - High-level API for pipeline execution
 
 import time
 import json
+import os
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -54,7 +56,8 @@ def execute_pipeline(
     entry_node: str,
     hardware_controller: Any,
     vision_engine: Any,
-    timeout_seconds: float = 300.0
+    timeout_seconds: float = 300.0,
+    stop_event: Any = None,
 ) -> bool:
     """
     Execute a pipeline from start to finish
@@ -81,7 +84,11 @@ def execute_pipeline(
 
     context = ExecutionContext(
         hardware_controller=hardware_controller,
-        vision_engine=vision_engine
+        vision_engine=vision_engine,
+        param={
+            "max_duration_seconds": float(timeout_seconds),
+            "stop_event": stop_event,
+        }
     )
 
     print(f"\n[Workflow] Starting: {pipeline_path.name}")
@@ -90,6 +97,21 @@ def execute_pipeline(
     start_time = time.time()
     success = executor.execute(entry_node, context)
     elapsed = time.time() - start_time
+
+    if os.getenv("FERRUMBOT_DEBUG") == "1":
+        debug_dir = Path("logs/debug")
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_path = debug_dir / f"pipeline_trace_{pipeline_path.stem}_{ts}.json"
+        payload = {
+            "pipeline_path": str(pipeline_path),
+            "entry_node": entry_node,
+            "elapsed_seconds": round(elapsed, 3),
+            "success": bool(success),
+            "trace": executor.execution_log,
+        }
+        out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"[Debug] Pipeline trace saved: {out_path}")
 
     print(f"[Workflow] Completed in {elapsed:.1f}s: {'SUCCESS' if success else 'FAILED'}")
 

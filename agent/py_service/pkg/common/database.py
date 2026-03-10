@@ -81,6 +81,31 @@ CREATE_PROGRESS_DATE_INDEX = """
 CREATE INDEX IF NOT EXISTS idx_progress_date ON character_progress(last_donation_date);
 """
 
+# SQL to create account-scoped character_progress table
+CREATE_ACCOUNT_CHARACTER_PROGRESS_TABLE = """
+CREATE TABLE IF NOT EXISTS account_character_progress (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL,
+    slot_index INTEGER NOT NULL,
+    character_name TEXT,
+    last_donation_date TEXT NOT NULL,
+    donation_count INTEGER DEFAULT 0,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(account_id, slot_index),
+    FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+);
+"""
+
+CREATE_ACCOUNT_PROGRESS_ACCOUNT_SLOT_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_account_progress_account_slot
+ON account_character_progress(account_id, slot_index);
+"""
+
+CREATE_ACCOUNT_PROGRESS_DATE_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_account_progress_date
+ON account_character_progress(last_donation_date);
+"""
+
 
 # =============================================================================
 # DATABASE INITIALIZATION
@@ -457,6 +482,31 @@ def delete_character(db_path: str, character_id: int) -> bool:
         conn.close()
 
 
+def delete_character_by_account_slot(db_path: str, account_id: int, slot_index: int) -> bool:
+    """
+    Delete a character record by account ID and slot index.
+
+    Args:
+        db_path: Path to the SQLite database file
+        account_id: The owning account ID
+        slot_index: The character slot index to delete
+
+    Returns:
+        True if a record was deleted, False if not found
+    """
+    conn = sqlite3.connect(db_path, timeout=5.0)
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM characters WHERE account_id = ? AND slot_index = ?",
+            (account_id, slot_index),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
 def delete_characters_by_account(db_path: str, account_id: int) -> int:
     """
     Delete all characters for a given account.
@@ -628,6 +678,95 @@ def is_character_done_today(db_path: str, slot_index: int) -> bool:
         if row is None:
             return False
 
+        return row[0] == today
+    except sqlite3.Error:
+        return False
+    finally:
+        conn.close()
+
+
+def mark_account_character_done(
+    db_path: str,
+    account_id: int,
+    slot_index: int,
+    character_name: str = None,
+) -> bool:
+    """
+    Mark a character's donation as complete for today (account-scoped).
+
+    Args:
+        db_path: Path to the SQLite database file
+        account_id: Account ID
+        slot_index: Account-local slot index
+        character_name: Optional display name
+
+    Returns:
+        True if successful, False otherwise
+    """
+    today = datetime.now().strftime('%Y-%m-%d')
+
+    conn = sqlite3.connect(db_path, timeout=5.0)
+    try:
+        cursor = conn.cursor()
+        cursor.execute(CREATE_ACCOUNT_CHARACTER_PROGRESS_TABLE)
+        cursor.execute(CREATE_ACCOUNT_PROGRESS_ACCOUNT_SLOT_INDEX)
+        cursor.execute(CREATE_ACCOUNT_PROGRESS_DATE_INDEX)
+        conn.commit()
+
+        cursor.execute(
+            """
+            INSERT INTO account_character_progress (
+                account_id, slot_index, character_name, last_donation_date, donation_count
+            )
+            VALUES (?, ?, ?, ?, 1)
+            ON CONFLICT(account_id, slot_index) DO UPDATE SET
+                last_donation_date = EXCLUDED.last_donation_date,
+                donation_count = account_character_progress.donation_count + 1,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (int(account_id), int(slot_index), character_name, today)
+        )
+        conn.commit()
+        return True
+    except sqlite3.Error:
+        return False
+    finally:
+        conn.close()
+
+
+def is_account_character_done_today(db_path: str, account_id: int, slot_index: int) -> bool:
+    """
+    Check if a specific account character has completed donation today.
+
+    Args:
+        db_path: Path to the SQLite database file
+        account_id: Account ID
+        slot_index: Account-local slot index
+
+    Returns:
+        True if done today, False otherwise
+    """
+    today = datetime.now().strftime('%Y-%m-%d')
+
+    conn = sqlite3.connect(db_path, timeout=5.0)
+    try:
+        cursor = conn.cursor()
+        cursor.execute(CREATE_ACCOUNT_CHARACTER_PROGRESS_TABLE)
+        cursor.execute(CREATE_ACCOUNT_PROGRESS_ACCOUNT_SLOT_INDEX)
+        cursor.execute(CREATE_ACCOUNT_PROGRESS_DATE_INDEX)
+        conn.commit()
+
+        cursor.execute(
+            """
+            SELECT last_donation_date
+            FROM account_character_progress
+            WHERE account_id = ? AND slot_index = ?
+            """,
+            (int(account_id), int(slot_index))
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return False
         return row[0] == today
     except sqlite3.Error:
         return False

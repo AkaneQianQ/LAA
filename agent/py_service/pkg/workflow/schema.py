@@ -160,6 +160,16 @@ class ClickDetectedAction(BaseModel):
         le=0.9,
         description="Vertical offset from top of ROI for clickable area (0.0-0.9, e.g., 0.33 skips top 33%)"
     )
+    timeout_ms: int = Field(
+        1000,
+        ge=1,
+        description="Detection timeout in milliseconds before click fails (default 1000ms)"
+    )
+    poll_interval_ms: int = Field(
+        100,
+        ge=1,
+        description="Detection polling interval in milliseconds (default 100ms)"
+    )
 
 
 class CaptureROIAction(BaseModel):

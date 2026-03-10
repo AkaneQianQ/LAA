@@ -1,205 +1,281 @@
 {
-    "verify_character_selection_screen": {
-        "desc": "verify_character_selection_screen",
-        "recognition": {
-            "type": "TemplateMatch",
-            "param": {
-                "template": "assets/character_selection_ui.bmp",
-                "roi": [
-                    500,
-                    500,
-                    1000,
-                    800
-                ],
-                "threshold": 0.7
-            }
-        },
-        "timeout": 5000,
-        "next": [
-            "scroll_to_top"
-        ]
-    },
-    "scroll_to_top": {
-        "desc": "scroll_to_top",
+    "press_esc_first": {
+        "desc": "press_esc_first",
         "action": {
-            "type": "Scroll",
+            "type": "KeyPress",
             "param": {
-                "direction": "up",
-                "ticks": 10
+                "key": "esc"
             }
         },
         "next": [
-            "wait_after_scroll_top"
+            "wait_after_esc_first"
         ]
     },
-    "wait_after_scroll_top": {
-        "desc": "wait_after_scroll_top",
+    "wait_after_esc_first": {
+        "desc": "wait_after_esc_first",
         "action": {
             "type": "Wait",
             "param": {
-                "duration_ms": 300
+                "duration_ms": 120
             }
         },
         "next": [
-            "scan_current_visible_slots"
+            "detect_switch_after_esc_first"
         ]
     },
-    "scan_current_visible_slots": {
-        "desc": "scan_current_visible_slots",
+    "detect_switch_after_esc_first": {
+        "desc": "detect_switch_after_esc_first",
+        "recognition": {
+            "type": "Custom",
+            "custom_recognition": "SwitchCharacterVisible",
+            "param": {
+                "template": "assets/resource/image/switchCharacter.bmp",
+                "roi": [
+                    575,
+                    907,
+                    856,
+                    952
+                ],
+                "threshold": 0.75,
+                "timeout_ms": 1000,
+                "poll_interval_ms": 100
+            }
+        },
+        "on_true": "resolve_account_tag",
+        "on_false": "press_esc_second"
+    },
+    "press_esc_second": {
+        "desc": "press_esc_second",
+        "action": {
+            "type": "KeyPress",
+            "param": {
+                "key": "esc"
+            }
+        },
         "next": [
-            "check_target_found"
+            "wait_after_esc_second"
         ]
     },
-    "check_target_found": {
-        "desc": "check_target_found",
+    "wait_after_esc_second": {
+        "desc": "wait_after_esc_second",
         "action": {
             "type": "Wait",
             "param": {
-                "duration_ms": 100
+                "duration_ms": 120
             }
         },
-        "on_true": "click_target_character",
-        "on_false": "scroll_and_continue_search"
-    },
-    "click_target_character": {
-        "desc": "click_target_character",
         "next": [
-            "wait_after_character_click"
+            "detect_switch_after_esc_second"
         ]
     },
-    "wait_after_character_click": {
-        "desc": "wait_after_character_click",
+    "detect_switch_after_esc_second": {
+        "desc": "detect_switch_after_esc_second",
+        "recognition": {
+            "type": "Custom",
+            "custom_recognition": "SwitchCharacterVisible",
+            "param": {
+                "template": "assets/resource/image/switchCharacter.bmp",
+                "roi": [
+                    575,
+                    907,
+                    856,
+                    952
+                ],
+                "threshold": 0.75,
+                "timeout_ms": 1000,
+                "poll_interval_ms": 100
+            }
+        },
+        "on_true": "resolve_account_tag",
+        "on_false": "switch_button_not_found_error"
+    },
+    "resolve_account_tag": {
+        "desc": "resolve_account_tag",
+        "recognition": {
+            "type": "Custom",
+            "custom_recognition": "ResolveAccountByTag",
+            "param": {
+                "roi": [
+                    666,
+                    793,
+                    772,
+                    902
+                ],
+                "phash_threshold": 10,
+                "db_path": "data/accounts.db",
+                "data_dir": "data",
+                "create_if_missing": false
+            }
+        },
+        "on_true": "check_first_character_done_today",
+        "on_false": "account_not_indexed_error"
+    },
+    "check_first_character_done_today": {
+        "desc": "check_first_character_done_today",
+        "recognition": {
+            "type": "Custom",
+            "custom_recognition": "AccountCharacterDoneToday",
+            "param": {
+                "slot_index": 0,
+                "db_path": "data/accounts.db"
+            }
+        },
+        "on_true": "process_remaining_characters",
+        "on_false": "first_character_donation_entry"
+    },
+    "first_character_donation_entry": {
+        "desc": "first_character_donation_entry",
+        "action": {
+            "type": "KeyPress",
+            "param": {
+                "key": "esc"
+            }
+        },
+        "next": [
+            "wait_after_first_donation_esc"
+        ]
+    },
+    "wait_after_first_donation_esc": {
+        "desc": "wait_after_first_donation_esc",
         "action": {
             "type": "Wait",
             "param": {
-                "duration_ms": 200
+                "duration_ms": 120
             }
         },
         "next": [
-            "click_login_button"
+            "wait_switch_button_disappear_for_first"
         ]
     },
-    "click_login_button": {
-        "desc": "click_login_button",
+    "wait_switch_button_disappear_for_first": {
+        "desc": "wait_switch_button_disappear_for_first",
         "recognition": {
             "type": "TemplateMatch",
             "param": {
-                "template": "assets/btn_login_yellow.bmp",
+                "template": "assets/resource/image/switchCharacter.bmp",
                 "roi": [
-                    1200,
-                    880,
-                    1700,
-                    960
+                    575,
+                    907,
+                    856,
+                    952
                 ],
-                "threshold": 0.8
+                "threshold": 0.8,
+                "state": "disappear"
             }
         },
+        "timeout": 1000,
+        "next": [
+            "execute_first_character_donation"
+        ]
+    },
+    "execute_first_character_donation": {
+        "desc": "execute_first_character_donation",
         "action": {
-            "type": "Click"
+            "type": "Custom",
+            "custom_action": "ExecuteDonation",
+            "param": {}
         },
         "next": [
-            "wait_for_login_complete"
+            "mark_first_character_done"
         ]
     },
-    "wait_for_login_complete": {
-        "desc": "wait_for_login_complete",
-        "recognition": {
-            "type": "TemplateMatch",
-            "param": {
-                "template": "assets/login_popup_confirm.bmp",
-                "roi": [
-                    1100,
-                    700,
-                    1500,
-                    1100
-                ],
-                "threshold": 0.7
-            }
-        },
-        "timeout": 3000,
-        "on_true": "handle_login_confirm_popup",
-        "on_false": "wait_for_game_load"
-    },
-    "handle_login_confirm_popup": {
-        "desc": "handle_login_confirm_popup",
-        "recognition": {
-            "type": "TemplateMatch",
-            "param": {
-                "template": "assets/login_popup_confirm.bmp",
-                "roi": [
-                    1100,
-                    700,
-                    1500,
-                    1100
-                ],
-                "threshold": 0.7
-            }
-        },
+    "mark_first_character_done": {
+        "desc": "mark_first_character_done",
         "action": {
-            "type": "Click"
-        },
-        "next": [
-            "wait_for_game_load"
-        ]
-    },
-    "wait_for_game_load": {
-        "desc": "wait_for_game_load",
-        "recognition": {
-            "type": "TemplateMatch",
+            "type": "Custom",
+            "custom_action": "MarkAccountCharacterDone",
             "param": {
-                "template": "assets/game_ui_loaded.bmp",
-                "roi": [
-                    0,
-                    0,
-                    500,
-                    500
-                ],
-                "threshold": 0.7
+                "slot_index": 0,
+                "db_path": "data/accounts.db"
             }
         },
-        "timeout": 30000,
+        "next": [
+            "process_remaining_characters"
+        ]
+    },
+    "process_remaining_characters": {
+        "desc": "process_remaining_characters",
+        "action": {
+            "type": "Custom",
+            "custom_action": "ProcessRemainingDonations",
+            "param": {
+                "db_path": "data/accounts.db",
+                "switch_template": "assets/resource/image/switchCharacter.bmp",
+                "switch_roi": [
+                    575,
+                    907,
+                    856,
+                    952
+                ],
+                "switch_timeout_ms": 1000,
+                "poll_interval_ms": 100,
+                "switch_check_template": "assets/resource/image/CharacterSwitchCheck.bmp",
+                "switch_check_roi": [
+                    1308,
+                    912,
+                    1580,
+                    947
+                ],
+                "switch_check_threshold": 0.62,
+                "switch_check_timeout_ms": 1800,
+                "max_esc_open_attempts": 5,
+                "dedupe_similarity_threshold": 0.995,
+                "dedupe_mad_threshold": 4.0,
+                "dedupe_center_similarity_threshold": 0.995,
+                "dedupe_center_mad_threshold": 4.0,
+                "dedupe_text_hamming_threshold": 6,
+                "dedupe_center_hamming_threshold": 6,
+                "dedupe_fusion_threshold": 0.97,
+                "login_template": "assets/resource/image/loginButton.bmp",
+                "login_roi": [
+                    1308,
+                    912,
+                    1441,
+                    948
+                ],
+                "confirm_template": "assets/resource/image/ConfirmButton2.bmp",
+                "confirm_roi": [
+                    1176,
+                    776,
+                    1278,
+                    812
+                ],
+                "load_pixel_x": 973,
+                "load_pixel_y": 1146,
+                "load_pixel_rgb": [
+                    148,
+                    12,
+                    8
+                ],
+                "load_pixel_tolerance": 18,
+                "load_color_timeout_ms": 20000,
+                "load_color_min_consecutive_hits": 2,
+                "safe_x": 1689,
+                "safe_y": 698,
+                "bottom_template": "assets/resource/image/Buttom.bmp",
+                "bottom_roi": [
+                    1682,
+                    815,
+                    1698,
+                    861
+                ],
+                "bottom_threshold": 0.95,
+                "slot_click_settle_ms": 150,
+                "max_switch_loops": 24
+            }
+        },
         "next": [
             "workflow_complete"
         ]
     },
-    "scroll_and_continue_search": {
-        "desc": "scroll_and_continue_search",
-        "action": {
-            "type": "Scroll",
-            "param": {
-                "direction": "down",
-                "ticks": 3
-            }
-        },
+    "switch_button_not_found_error": {
+        "desc": "switch_button_not_found_error",
         "next": [
-            "wait_after_scroll_search"
+            "account_not_indexed_error"
         ]
     },
-    "wait_after_scroll_search": {
-        "desc": "wait_after_scroll_search",
-        "action": {
-            "type": "Wait",
-            "param": {
-                "duration_ms": 300
-            }
-        },
-        "next": [
-            "check_max_scroll_reached"
-        ]
-    },
-    "check_max_scroll_reached": {
-        "desc": "check_max_scroll_reached",
-        "action": {
-            "type": "Wait",
-            "param": {
-                "duration_ms": 100
-            }
-        },
-        "on_true": "character_not_found_error",
-        "on_false": "scan_current_visible_slots"
-    },
-    "character_not_found_error": {
-        "desc": "character_not_found_error",
+    "account_not_indexed_error": {
+        "desc": "account_not_indexed_error",
         "next": [
             "workflow_complete"
         ]
@@ -209,14 +285,14 @@
         "action": {
             "type": "Wait",
             "param": {
-                "duration_ms": 100
+                "duration_ms": 50
             }
         }
     },
     "character_switchMain": {
         "desc": "character_switch main entry",
         "next": [
-            "verify_character_selection_screen"
+            "press_esc_first"
         ]
     }
 }
