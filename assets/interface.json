@@ -21,6 +21,7 @@
             "name": "KMBox-Custom",
             "label": "KMBox 自定义端口",
             "description": "用户指定端口的 KMBox 设备",
+            "driver": "ferrum",
             "type": "Serial",
             "serial": {
                 "port": "${PORT}",
@@ -35,6 +36,18 @@
                     "default": "COM3"
                 }
             ]
+        },
+        {
+            "name": "MAKCU-Default",
+            "label": "MAKCU 默认 (COM3)",
+            "description": "通过串口连接的 MAKCU ESP-32-S3X2 设备",
+            "driver": "makcu",
+            "type": "Serial",
+            "serial": {
+                "port": "COM3",
+                "baudrate": 115200,
+                "timeout": 1.0
+            }
         }
     ],
 
@@ -86,12 +99,20 @@
             "description": "扫描并索引账号",
             "entry": "AccountIndexingMain",
             "pipeline": "assets/resource/pipeline/account_indexing.json"
+        },
+        {
+            "name": "TriggerTask",
+            "label": "图像触发",
+            "description": "基于图像检测的半自动触发任务 (F11功能)",
+            "entry": "trigger_actionMain",
+            "pipeline": "assets/resource/pipeline/trigger_action.json"
         }
     ],
 
     "import": [
         "assets/resource/pipeline/guild_donation.json",
         "assets/resource/pipeline/character_switch.json",
-        "assets/resource/pipeline/account_indexing.json"
+        "assets/resource/pipeline/account_indexing.json",
+        "assets/resource/pipeline/trigger_action.json"
     ]
 }
