@@ -10,10 +10,12 @@ Implements Task A (Up-Up-Down) and Task B (Offset Clicks + Enter) logic.
 import sys
 import io
 
-# Fix Windows console encoding
+# Fix Windows console encoding (only if stdout has buffer, skip in GUI mode)
 if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+    if hasattr(sys.stdout, 'buffer'):
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    if hasattr(sys.stderr, 'buffer'):
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 import time
 from pathlib import Path
