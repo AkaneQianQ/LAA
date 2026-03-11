@@ -202,6 +202,40 @@ class TestPipelineExecutor:
         assert context.vision_engine is not None
         print("[OK] ExecutionContext created")
 
+    def test_custom_action_failure_marks_pipeline_failed(self, vision_engine):
+        """自定义 action 显式失败时，整个 pipeline 不应报告成功。"""
+        pipeline = {
+            "TestMain": {
+                "action": {
+                    "type": "Custom",
+                    "custom_action": "AlwaysFail",
+                },
+                "next": ["AfterFail"],
+            },
+            "AfterFail": {
+                "action": {
+                    "type": "Wait",
+                    "duration_ms": 1,
+                },
+                "next": None,
+            },
+        }
+
+        executor = create_executor_with_defaults(
+            pipeline,
+            custom_action_registry={
+                "AlwaysFail": lambda ctx: False,
+            },
+        )
+        context = ExecutionContext(
+            hardware_controller=None,
+            vision_engine=vision_engine,
+            screenshot=None,
+            param={},
+        )
+
+        assert executor.execute("TestMain", context) is False
+
 
 class TestFullDonationWorkflow:
     """完整捐献流程测试（硬件模式）."""

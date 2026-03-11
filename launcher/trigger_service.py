@@ -5,7 +5,10 @@
 from __future__ import annotations
 
 import cv2
+import os
+import sys
 import time
+from pathlib import Path
 from threading import Event
 from typing import Callable, Optional
 
@@ -15,10 +18,15 @@ from agent.py_service.pkg.vision.frame_cache import FrameCache
 
 from launcher.service import (
     apply_controller_override,
+    append_probe_log,
     build_controller_override,
     resolve_controller_config,
     resolve_controller_name,
 )
+
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+TRIGGER_LOG_PATH = PROJECT_ROOT / "logs" / "trigger_runtime.log"
 
 
 DEFAULT_TRIGGER_CONFIG = {
@@ -41,6 +49,47 @@ DEFAULT_TRIGGER_CONFIG = {
 TRIGGER_MATCH_STABILIZE_S = 0.15
 TRIGGER_MOVE_SETTLE_S = 0.05
 TRIGGER_ENTER_SETTLE_S = 0.05
+
+
+def append_trigger_log(message: str) -> None:
+    TRIGGER_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    timestamp = __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with TRIGGER_LOG_PATH.open("a", encoding="utf-8") as fp:
+        fp.write(f"[{timestamp}] {message}\n")
+
+
+def resolve_trigger_asset_path(relative_path: str) -> str:
+    candidate = Path(relative_path)
+    if candidate.is_absolute() and candidate.exists():
+        return str(candidate)
+
+    search_roots = []
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        search_roots.append(Path(meipass))
+    search_roots.append(PROJECT_ROOT)
+    search_roots.append(PROJECT_ROOT / "_internal")
+
+    normalized = Path(relative_path)
+    for root in search_roots:
+        resolved = root / normalized
+        if resolved.exists():
+            return str(resolved)
+
+    return str((search_roots[0] / normalized) if search_roots else normalized)
+
+
+def resolve_trigger_config_paths(config: dict) -> dict:
+    resolved = {
+        "TASK_A": dict(config["TASK_A"]),
+        "TASK_B": dict(config["TASK_B"]),
+    }
+    resolved["TASK_A"]["IMAGE"] = resolve_trigger_asset_path(str(config["TASK_A"]["IMAGE"]))
+    resolved["TASK_B"]["IMAGES"] = [
+        resolve_trigger_asset_path(str(image_path))
+        for image_path in config["TASK_B"]["IMAGES"]
+    ]
+    return resolved
 
 
 def get_template_center_point(template_path: str, match_top_left: tuple[int, int]) -> tuple[int, int]:
@@ -127,17 +176,30 @@ def run_independent_trigger(
     interface_config: dict,
     driver_backend: str,
     port: str,
+    baudrate: int | None,
     stop_event: Event,
+    keyboard_via_python: bool = False,
     config: Optional[dict] = None,
     log_writer: Optional[Callable[[str], None]] = None,
 ) -> None:
     """Long-running trigger loop for independent launcher usage."""
-    config = config or DEFAULT_TRIGGER_CONFIG
-    writer = log_writer or print
+    os.chdir(project_root := service_main.project_root)
+    config = resolve_trigger_config_paths(config or DEFAULT_TRIGGER_CONFIG)
+
+    def writer(message: str) -> None:
+        append_trigger_log(message)
+        append_probe_log(message)
+        if log_writer is not None:
+            log_writer(message)
+        else:
+            print(message)
 
     controller_name = resolve_controller_name(interface_config, driver_backend)
     controller_config = resolve_controller_config(interface_config, controller_name)
-    controller_config = apply_controller_override(controller_config, build_controller_override(port))
+    controller_config = apply_controller_override(
+        controller_config,
+        build_controller_override(port, baudrate, keyboard_via_python=keyboard_via_python),
+    )
 
     hardware_controller = service_main.create_hardware_controller(controller_config)
     vision_engine = VisionEngine(frame_cache=FrameCache(ttl_ms=50.0))
@@ -154,6 +216,9 @@ def run_independent_trigger(
                 log_writer=writer,
             )
             time.sleep(0.02)
+    except Exception as exc:
+        writer(f"[ERROR] trigger runtime failed: {exc}")
+        raise
     finally:
         hardware_controller.close()
         writer("[Trigger] independent trigger stopped")

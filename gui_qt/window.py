@@ -8,11 +8,13 @@ import ctypes
 import ctypes.wintypes
 import os
 import sys
+from pathlib import Path
 
 from PySide6.QtCore import QEvent, QPoint, Property, QEasingCurve, QPropertyAnimation, QRect, Qt
 from PySide6.QtGui import QColor, QCursor, QEnterEvent, QMouseEvent, QPaintEvent, QPainter
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -37,6 +39,8 @@ from gui_qt.theme import load_icon
 from gui_qt.titlebar import LauncherTitleBar
 from gui_qt.widgets import AnimatedButton, AnimatedTabWidget, BackendToggleButton
 from launcher.service import resolve_controller_name
+from launcher.update_service import ProxyConfig
+from agent.py_service import __version__ as APP_VERSION
 
 
 TASK_ITEMS = [
@@ -245,7 +249,12 @@ class FerrumMainWindow(QMainWindow):
         self.settings = self.bridge.load_settings()
         self.interface_config = self.bridge.load_interface()
         self.ports = dict(self.settings.ports)
+        self.baudrates = dict(getattr(self.settings, "baudrates", {}) or {"ferrum": 115200, "makcu": 115200})
+        self.keyboard_via_python = bool(getattr(self.settings, "keyboard_via_python", False))
+        self.update_repo = str(getattr(self.settings, "update_repo", "") or "")
+        self.update_proxy = getattr(self.settings, "update_proxy", ProxyConfig())
         self.current_backend = self.settings.driver_backend
+        self.latest_update_result: dict | None = None
         self.task_items = [dict(item, visible=True) for item in TASK_ITEMS]
         self._restore_task_queue_state()
         self.task_checkboxes: dict[str, QCheckBox] = {}
@@ -278,7 +287,7 @@ class FerrumMainWindow(QMainWindow):
         shell_layout.setSpacing(8)
 
         self.title_bar = LauncherTitleBar(
-            "LAA 1.0.0",
+            f"LAA {APP_VERSION}",
             shell,
         )
         shell_layout.addWidget(self.title_bar)
@@ -579,13 +588,101 @@ class FerrumMainWindow(QMainWindow):
         port_row.addWidget(self.detect_button)
         driver_layout.addLayout(port_row)
 
+        baudrate_row = QHBoxLayout()
+        baudrate_row.addWidget(QLabel("Baudrate", driver_panel))
+        self.baudrate_entry = QLineEdit(str(self._baudrate_for_backend(self.current_backend)), driver_panel)
+        self.baudrate_entry.editingFinished.connect(self._persist_settings)
+        baudrate_row.addWidget(self.baudrate_entry, 1)
+        driver_layout.addLayout(baudrate_row)
+
+        self.keyboard_path_checkbox = QCheckBox("键盘链路走 Python", driver_panel)
+        self.keyboard_path_checkbox.toggled.connect(self._on_keyboard_path_toggled)
+        driver_layout.addWidget(self.keyboard_path_checkbox)
+
         self.settings_status_label = QLabel("选择驱动并探测连接状态。", driver_panel)
         self.settings_status_label.setObjectName("contentHint")
         driver_layout.addWidget(self.settings_status_label)
         layout.addWidget(driver_panel, 0)
+
+        update_title = QLabel("模块更新", page)
+        update_title.setObjectName("sectionTitle")
+        layout.addWidget(update_title)
+
+        update_panel = QWidget(page)
+        update_panel.setObjectName("contentPanel")
+        update_layout = QVBoxLayout(update_panel)
+        update_layout.setContentsMargins(16, 16, 16, 16)
+        update_layout.setSpacing(12)
+
+        version_row = QHBoxLayout()
+        version_row.addWidget(QLabel("当前版本", update_panel))
+        self.current_version_label = QLabel(APP_VERSION, update_panel)
+        self.current_version_label.setObjectName("taskMeta")
+        version_row.addWidget(self.current_version_label)
+        version_row.addStretch(1)
+        update_layout.addLayout(version_row)
+
+        repo_row = QHBoxLayout()
+        repo_row.addWidget(QLabel("GitHub Repo", update_panel))
+        self.update_repo_entry = QLineEdit(self.update_repo, update_panel)
+        self.update_repo_entry.editingFinished.connect(self._persist_settings)
+        repo_row.addWidget(self.update_repo_entry, 1)
+        update_layout.addLayout(repo_row)
+
+        proxy_toggle_row = QHBoxLayout()
+        self.update_proxy_checkbox = QCheckBox("启用代理", update_panel)
+        self.update_proxy_checkbox.toggled.connect(self._on_update_proxy_toggled)
+        proxy_toggle_row.addWidget(self.update_proxy_checkbox)
+        proxy_toggle_row.addStretch(1)
+        update_layout.addLayout(proxy_toggle_row)
+
+        proxy_row = QHBoxLayout()
+        self.update_proxy_scheme_combo = QComboBox(update_panel)
+        self.update_proxy_scheme_combo.addItems(["http", "socks5"])
+        self.update_proxy_scheme_combo.currentTextChanged.connect(lambda _value: self._persist_settings())
+        self.update_proxy_host_entry = QLineEdit(str(self.update_proxy.host or ""), update_panel)
+        self.update_proxy_host_entry.setPlaceholderText("127.0.0.1")
+        self.update_proxy_host_entry.editingFinished.connect(self._persist_settings)
+        self.update_proxy_port_entry = QLineEdit(str(self.update_proxy.port or ""), update_panel)
+        self.update_proxy_port_entry.setPlaceholderText("7890")
+        self.update_proxy_port_entry.editingFinished.connect(self._persist_settings)
+        proxy_row.addWidget(self.update_proxy_scheme_combo, 0)
+        proxy_row.addWidget(self.update_proxy_host_entry, 1)
+        proxy_row.addWidget(self.update_proxy_port_entry, 0)
+        update_layout.addLayout(proxy_row)
+
+        proxy_auth_row = QHBoxLayout()
+        self.update_proxy_username_entry = QLineEdit(str(self.update_proxy.username or ""), update_panel)
+        self.update_proxy_username_entry.setPlaceholderText("Username")
+        self.update_proxy_username_entry.editingFinished.connect(self._persist_settings)
+        self.update_proxy_password_entry = QLineEdit(str(self.update_proxy.password or ""), update_panel)
+        self.update_proxy_password_entry.setPlaceholderText("Password")
+        self.update_proxy_password_entry.setEchoMode(QLineEdit.Password)
+        self.update_proxy_password_entry.editingFinished.connect(self._persist_settings)
+        proxy_auth_row.addWidget(self.update_proxy_username_entry, 1)
+        proxy_auth_row.addWidget(self.update_proxy_password_entry, 1)
+        update_layout.addLayout(proxy_auth_row)
+
+        update_action_row = QHBoxLayout()
+        self.check_update_button = AnimatedButton("检查更新", update_panel)
+        self.check_update_button.clicked.connect(self._check_for_updates)
+        self.download_update_button = AnimatedButton("下载更新", update_panel)
+        self.download_update_button.setEnabled(False)
+        self.download_update_button.clicked.connect(self._download_and_apply_update)
+        update_action_row.addWidget(self.check_update_button)
+        update_action_row.addWidget(self.download_update_button)
+        update_action_row.addStretch(1)
+        update_layout.addLayout(update_action_row)
+
+        self.update_status_label = QLabel("检查 GitHub Release 获取最新版本。", update_panel)
+        self.update_status_label.setObjectName("contentHint")
+        update_layout.addWidget(self.update_status_label)
+
+        layout.addWidget(update_panel, 0)
         layout.addStretch(1)
 
         self._select_backend(self.current_backend, persist=False)
+        self._apply_update_proxy_state()
         return page
 
     def _build_logs_page(self) -> QWidget:
@@ -699,9 +796,10 @@ class FerrumMainWindow(QMainWindow):
         return {str(item["task_name"]): bool(item.get("visible", True)) for item in self.task_items}
 
     def _persist_task_queue_settings(self) -> None:
-        self.bridge.save_settings(
+        self._save_bridge_settings(
             self.current_backend,
             dict(self.ports),
+            dict(self.baudrates),
             task_checked=self._task_checked_state(),
             task_visibility=self._task_visibility_state(),
             task_order=[str(item["task_name"]) for item in self.task_items],
@@ -766,6 +864,11 @@ class FerrumMainWindow(QMainWindow):
         self.current_backend = backend
         if hasattr(self, "port_entry"):
             self.port_entry.setText(self.ports.get(backend, "COM2" if backend == "ferrum" else "COM3"))
+        if hasattr(self, "baudrate_entry"):
+            self.baudrate_entry.setText(str(self._baudrate_for_backend(backend)))
+        if hasattr(self, "keyboard_path_checkbox"):
+            is_makcu = backend == "makcu"
+            self.keyboard_path_checkbox.setHidden(not is_makcu)
         self.driver_value.setText(backend.upper())
         self._persist_settings()
 
@@ -777,6 +880,13 @@ class FerrumMainWindow(QMainWindow):
             self.makcu_button.setChecked(backend == "makcu")
         if hasattr(self, "port_entry"):
             self.port_entry.setText(self.ports.get(backend, "COM2" if backend == "ferrum" else "COM3"))
+        if hasattr(self, "baudrate_entry"):
+            self.baudrate_entry.setText(str(self._baudrate_for_backend(backend)))
+        if hasattr(self, "keyboard_path_checkbox"):
+            self.keyboard_path_checkbox.blockSignals(True)
+            self.keyboard_path_checkbox.setChecked(self.keyboard_via_python)
+            self.keyboard_path_checkbox.setHidden(backend != "makcu")
+            self.keyboard_path_checkbox.blockSignals(False)
         self.driver_value.setText(backend.upper())
         if persist:
             self._persist_settings()
@@ -784,9 +894,31 @@ class FerrumMainWindow(QMainWindow):
     def _persist_settings(self) -> None:
         if hasattr(self, "port_entry"):
             self.ports[self.current_backend] = self.port_entry.text().strip() or self.ports.get(self.current_backend, "COM2")
-        self.bridge.save_settings(
+        if hasattr(self, "baudrate_entry"):
+            self.baudrates[self.current_backend] = self._normalize_baudrate(
+                self.baudrate_entry.text(),
+                self.baudrates.get(self.current_backend, 115200),
+            )
+            self.baudrate_entry.setText(str(self.baudrates[self.current_backend]))
+        if hasattr(self, "update_repo_entry"):
+            self.update_repo = self.update_repo_entry.text().strip()
+        if hasattr(self, "update_proxy_checkbox"):
+            self.update_proxy = ProxyConfig(
+                enabled=self.update_proxy_checkbox.isChecked(),
+                scheme=self.update_proxy_scheme_combo.currentText().strip().lower() or "http",
+                host=self.update_proxy_host_entry.text().strip(),
+                port=self._normalize_positive_int(self.update_proxy_port_entry.text(), 0),
+                username=self.update_proxy_username_entry.text().strip(),
+                password=self.update_proxy_password_entry.text(),
+            )
+            self.update_proxy_port_entry.setText("" if self.update_proxy.port <= 0 else str(self.update_proxy.port))
+        self._save_bridge_settings(
             self.current_backend,
             dict(self.ports),
+            dict(self.baudrates),
+            keyboard_via_python=self.keyboard_via_python,
+            update_repo=self.update_repo,
+            update_proxy=self.update_proxy,
             task_checked=self._task_checked_state(),
             task_visibility=self._task_visibility_state(),
             task_order=[str(item["task_name"]) for item in self.task_items],
@@ -795,10 +927,17 @@ class FerrumMainWindow(QMainWindow):
     def _probe_current_driver(self) -> None:
         self._persist_settings()
         port = self.ports.get(self.current_backend, "COM2")
+        baudrate = self._baudrate_for_backend(self.current_backend)
         self.connection_value.setText("检测中")
         if hasattr(self, "settings_status_label"):
             self.settings_status_label.setText("正在探测控制器连接。")
-        self.bridge.probe(self.interface_config, self.current_backend, port)
+        self._bridge_probe(
+            self.interface_config,
+            self.current_backend,
+            port,
+            baudrate,
+            keyboard_via_python=self.keyboard_via_python,
+        )
 
     def _toggle_trigger(self) -> None:
         if self.bridge.is_busy():
@@ -807,7 +946,14 @@ class FerrumMainWindow(QMainWindow):
 
         self._persist_settings()
         port = self.ports.get(self.current_backend, "COM2")
-        self.bridge.start_trigger(self.interface_config, self.current_backend, port)
+        baudrate = self._baudrate_for_backend(self.current_backend)
+        self._bridge_start_trigger(
+            self.interface_config,
+            self.current_backend,
+            port,
+            baudrate,
+            keyboard_via_python=self.keyboard_via_python,
+        )
 
     def _open_settings_tab(self) -> None:
         for index in range(self.tab_widget.count()):
@@ -826,11 +972,184 @@ class FerrumMainWindow(QMainWindow):
             return
 
         task = selected[0]
-        backend = self.settings.driver_backend
-        port = self.settings.ports.get(backend, "COM2")
+        backend = self.current_backend
+        port = self.ports.get(backend, "COM2")
+        baudrate = self._baudrate_for_backend(backend)
         controller_name = self._resolve_controller_name(backend)
         self._set_busy(True)
-        self.bridge.start_task(str(task["task_name"]), controller_name, port)
+        self._bridge_start_task(
+            str(task["task_name"]),
+            controller_name,
+            port,
+            baudrate,
+            keyboard_via_python=self.keyboard_via_python,
+        )
+
+    def _baudrate_for_backend(self, backend: str) -> int:
+        return self._normalize_baudrate(self.baudrates.get(backend, 115200), 115200)
+
+    def _normalize_baudrate(self, value: object, default: int = 115200) -> int:
+        try:
+            baudrate = int(str(value).strip())
+        except (TypeError, ValueError):
+            return int(default)
+        if baudrate <= 0:
+            return int(default)
+        return baudrate
+
+    def _normalize_positive_int(self, value: object, default: int = 0) -> int:
+        try:
+            number = int(str(value).strip())
+        except (TypeError, ValueError):
+            return int(default)
+        if number <= 0:
+            return int(default)
+        return number
+
+    def _save_bridge_settings(self, driver_backend: str, ports: dict[str, str], baudrates: dict[str, int], **kwargs) -> None:
+        reduced_kwargs = dict(kwargs)
+        legacy_kwargs = dict(kwargs)
+        legacy_kwargs.pop("update_repo", None)
+        legacy_kwargs.pop("update_proxy", None)
+        bare_kwargs = dict(legacy_kwargs)
+        bare_kwargs.pop("keyboard_via_python", None)
+        try:
+            self.bridge.save_settings(driver_backend, ports, baudrates, **kwargs)
+        except TypeError:
+            try:
+                self.bridge.save_settings(driver_backend, ports, baudrates, **legacy_kwargs)
+            except TypeError:
+                try:
+                    self.bridge.save_settings(driver_backend, ports, baudrates, **bare_kwargs)
+                except TypeError:
+                    self.bridge.save_settings(driver_backend, ports, **bare_kwargs)
+
+    def _bridge_probe(self, interface_config: dict, driver_backend: str, port: str, baudrate: int, keyboard_via_python: bool = False) -> None:
+        try:
+            self.bridge.probe(interface_config, driver_backend, port, baudrate, keyboard_via_python)
+        except TypeError:
+            try:
+                self.bridge.probe(interface_config, driver_backend, port, baudrate)
+            except TypeError:
+                self.bridge.probe(interface_config, driver_backend, port)
+
+    def _bridge_start_trigger(self, interface_config: dict, driver_backend: str, port: str, baudrate: int, keyboard_via_python: bool = False) -> None:
+        try:
+            self.bridge.start_trigger(interface_config, driver_backend, port, baudrate, keyboard_via_python)
+        except TypeError:
+            try:
+                self.bridge.start_trigger(interface_config, driver_backend, port, baudrate)
+            except TypeError:
+                self.bridge.start_trigger(interface_config, driver_backend, port)
+
+    def _on_update_proxy_toggled(self, checked: bool) -> None:
+        self._apply_update_proxy_state(enabled=bool(checked))
+        self._persist_settings()
+
+    def _apply_update_proxy_state(self, enabled: bool | None = None) -> None:
+        if not hasattr(self, "update_proxy_checkbox"):
+            return
+        if enabled is None:
+            enabled = bool(self.update_proxy.enabled)
+        self.update_proxy_checkbox.blockSignals(True)
+        self.update_proxy_checkbox.setChecked(bool(enabled))
+        self.update_proxy_checkbox.blockSignals(False)
+        if hasattr(self, "update_proxy_scheme_combo"):
+            scheme = str(self.update_proxy.scheme or "http").lower()
+            index = self.update_proxy_scheme_combo.findText(scheme)
+            self.update_proxy_scheme_combo.setCurrentIndex(0 if index < 0 else index)
+        for widget in (
+            getattr(self, "update_proxy_scheme_combo", None),
+            getattr(self, "update_proxy_host_entry", None),
+            getattr(self, "update_proxy_port_entry", None),
+            getattr(self, "update_proxy_username_entry", None),
+            getattr(self, "update_proxy_password_entry", None),
+        ):
+            if widget is not None:
+                widget.setEnabled(bool(enabled))
+
+    def _check_for_updates(self) -> None:
+        self._persist_settings()
+        try:
+            result = self.bridge.check_for_updates(APP_VERSION)
+        except Exception as exc:
+            self.latest_update_result = None
+            self.update_status_label.setText(f"检查失败: {exc}")
+            self.download_update_button.setEnabled(False)
+            self._append_log(f"[Launcher] update check failed: {exc}")
+            return
+        self.latest_update_result = dict(result)
+        version = str(result.get("version", "")).strip() or str(result.get("tag_name", "")).strip() or "unknown"
+        assets = [asset for asset in result.get("assets", []) if isinstance(asset, dict)]
+        has_verified_asset = any(str(asset.get("sha256", "")).strip() for asset in assets)
+        release_issues = [str(issue).strip() for issue in result.get("release_issues", []) if str(issue).strip()]
+        if bool(result.get("is_prerelease", False)):
+            self.update_status_label.setText(f"发现预发布版本 {version}，当前仅支持正式版自动更新。")
+            self.download_update_button.setEnabled(False)
+        elif release_issues:
+            self.update_status_label.setText("；".join(release_issues))
+            self.download_update_button.setEnabled(False)
+        elif bool(result.get("is_newer", False)) and not has_verified_asset:
+            self.update_status_label.setText(f"发现新版本 {version}，但缺少 SHA-256 校验信息，已禁用自动更新。")
+            self.download_update_button.setEnabled(False)
+        elif bool(result.get("is_newer", False)):
+            self.update_status_label.setText(f"发现新版本 {version}，可准备下载更新。")
+            self.download_update_button.setEnabled(True)
+        else:
+            self.update_status_label.setText(f"当前已是最新版本 ({version})。")
+            self.download_update_button.setEnabled(False)
+
+    def _download_and_apply_update(self) -> None:
+        if not self.latest_update_result or not self.latest_update_result.get("assets"):
+            self.update_status_label.setText("缺少可下载的更新包，请先检查更新。")
+            self.download_update_button.setEnabled(False)
+            return
+        try:
+            install_dir, restart_executable, restart_args = self._build_update_restart_context()
+            self.bridge.download_and_apply_update(
+                self.latest_update_result,
+                install_dir=install_dir,
+                restart_executable=restart_executable,
+                restart_args=restart_args,
+            )
+        except Exception as exc:
+            self.update_status_label.setText(f"下载失败: {exc}")
+            self._append_log(f"[Launcher] update download failed: {exc}")
+            return
+        self.update_status_label.setText("更新包已下载，程序即将退出并应用更新。")
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
+
+    def _build_update_restart_context(self) -> tuple[str, str, list[str]]:
+        if getattr(sys, "frozen", False):
+            executable = str(Path(sys.executable).resolve())
+            install_dir = str(Path(executable).parent)
+            return install_dir, executable, []
+        install_dir = str(Path(__file__).resolve().parents[1])
+        executable = str(Path(sys.executable).resolve())
+        launcher_script = str(Path(__file__).resolve().parents[1] / "gui_launcher.py")
+        return install_dir, executable, [launcher_script]
+
+    def _bridge_start_task(
+        self,
+        task_name: str,
+        controller_name: str,
+        port: str,
+        baudrate: int,
+        keyboard_via_python: bool = False,
+    ) -> None:
+        try:
+            self.bridge.start_task(task_name, controller_name, port, baudrate, keyboard_via_python)
+        except TypeError:
+            try:
+                self.bridge.start_task(task_name, controller_name, port, baudrate)
+            except TypeError:
+                self.bridge.start_task(task_name, controller_name, port)
+
+    def _on_keyboard_path_toggled(self, checked: bool) -> None:
+        self.keyboard_via_python = bool(checked)
+        self._persist_settings()
 
     def _set_busy(self, busy: bool) -> None:
         self.start_button.setEnabled(True)

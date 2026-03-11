@@ -51,6 +51,55 @@ def test_launcher_settings_persist_ports_per_backend(tmp_path):
     assert loaded.ports["makcu"] == "COM7"
 
 
+def test_launcher_settings_persist_baudrates_per_backend(tmp_path):
+    from launcher.settings import LauncherSettings, LauncherSettingsStore
+
+    settings_path = tmp_path / "ui_settings.json"
+    store = LauncherSettingsStore(settings_path)
+    store.save(
+        LauncherSettings(
+            driver_backend="makcu",
+            ports={"ferrum": "COM2", "makcu": "COM7"},
+            baudrates={"ferrum": 115200, "makcu": 9600},
+        )
+    )
+
+    loaded = store.load()
+    assert loaded.baudrates["ferrum"] == 115200
+    assert loaded.baudrates["makcu"] == 9600
+
+
+def test_launcher_settings_default_baudrates_when_missing_from_file(tmp_path):
+    from launcher.settings import LauncherSettingsStore
+
+    settings_path = tmp_path / "ui_settings.json"
+    settings_path.write_text(
+        '{"driver_backend": "makcu", "ports": {"ferrum": "COM2", "makcu": "COM9"}}',
+        encoding="utf-8",
+    )
+
+    loaded = LauncherSettingsStore(settings_path).load()
+
+    assert loaded.baudrates == {"ferrum": 115200, "makcu": 115200}
+
+
+def test_launcher_settings_persist_keyboard_via_python(tmp_path):
+    from launcher.settings import LauncherSettings, LauncherSettingsStore
+
+    settings_path = tmp_path / "ui_settings.json"
+    store = LauncherSettingsStore(settings_path)
+    store.save(
+        LauncherSettings(
+            driver_backend="makcu",
+            ports={"ferrum": "COM2", "makcu": "COM7"},
+            keyboard_via_python=True,
+        )
+    )
+
+    loaded = store.load()
+    assert loaded.keyboard_via_python is True
+
+
 def test_launcher_settings_persist_task_queue_state(tmp_path):
     from launcher.settings import LauncherSettings, LauncherSettingsStore
 
@@ -291,6 +340,12 @@ def test_packaging_files_exist():
     assert Path("gui_qt/theme/assets/checkbox_unchecked.svg").exists()
 
 
+def test_packaging_spec_includes_qt_theme_assets():
+    spec_text = Path("FerrumBotLauncher.spec").read_text(encoding="utf-8")
+
+    assert "gui_qt/theme/assets" in spec_text or 'collect_data_files("gui_qt"' in spec_text
+
+
 def test_qt_launcher_bridge_loads_and_saves_settings(tmp_path):
     from gui_qt.adapters.launcher_bridge import LauncherBridge
 
@@ -299,10 +354,45 @@ def test_qt_launcher_bridge_loads_and_saves_settings(tmp_path):
     settings = bridge.load_settings()
     assert settings.driver_backend == "ferrum"
 
-    bridge.save_settings("makcu", {"ferrum": "COM2", "makcu": "COM8"})
+    bridge.save_settings("makcu", {"ferrum": "COM2", "makcu": "COM8"}, {"ferrum": 115200, "makcu": 9600})
     updated = bridge.load_settings()
     assert updated.driver_backend == "makcu"
     assert updated.ports["makcu"] == "COM8"
+    assert updated.baudrates["makcu"] == 9600
+
+
+def test_qt_launcher_bridge_loads_and_saves_keyboard_via_python(tmp_path):
+    from gui_qt.adapters.launcher_bridge import LauncherBridge
+
+    bridge = LauncherBridge(settings_path=tmp_path / "ui_settings.json")
+
+    bridge.save_settings(
+        "makcu",
+        {"ferrum": "COM2", "makcu": "COM8"},
+        {"ferrum": 115200, "makcu": 9600},
+        keyboard_via_python=True,
+    )
+    updated = bridge.load_settings()
+    assert updated.keyboard_via_python is True
+
+
+def test_qt_launcher_bridge_loads_and_saves_update_settings(tmp_path):
+    from gui_qt.adapters.launcher_bridge import LauncherBridge
+    from launcher.update_service import ProxyConfig
+
+    bridge = LauncherBridge(settings_path=tmp_path / "ui_settings.json")
+
+    bridge.save_settings(
+        "makcu",
+        {"ferrum": "COM2", "makcu": "COM8"},
+        {"ferrum": 115200, "makcu": 9600},
+        update_repo="example/ferrum",
+        update_proxy=ProxyConfig(enabled=True, scheme="http", host="127.0.0.1", port=7890),
+    )
+    updated = bridge.load_settings()
+    assert updated.update_repo == "example/ferrum"
+    assert updated.update_proxy.enabled is True
+    assert updated.update_proxy.host == "127.0.0.1"
 
 
 def test_qt_launcher_bridge_runs_task_and_emits_events():
@@ -314,8 +404,8 @@ def test_qt_launcher_bridge_runs_task_and_emits_events():
     captured = {"log": [], "started": [], "finished": []}
     release = threading.Event()
 
-    def fake_runner(task_name, controller_name, port=None, log_writer=None, stop_event=None):
-        captured["started"].append((task_name, controller_name, port))
+    def fake_runner(task_name, controller_name, port=None, baudrate=None, log_writer=None, stop_event=None):
+        captured["started"].append((task_name, controller_name, port, baudrate))
         if log_writer is not None:
             log_writer("bridge worker started")
         release.wait(timeout=2)
@@ -328,17 +418,381 @@ def test_qt_launcher_bridge_runs_task_and_emits_events():
     bridge.task_started.connect(lambda task_name: captured["started"].append(("signal", task_name)))
     bridge.task_finished.connect(lambda success: captured["finished"].append(success))
 
-    bridge.start_task("CharacterSwitch", "KMBox-Default", "COM9")
+    bridge.start_task("CharacterSwitch", "KMBox-Default", "COM9", 9600)
     assert bridge.is_busy() is True
     release.set()
     bridge.wait_for_idle(timeout=2)
 
-    assert ("CharacterSwitch", "KMBox-Default", "COM9") in captured["started"]
+    assert ("CharacterSwitch", "KMBox-Default", "COM9", 9600) in captured["started"]
     assert ("signal", "CharacterSwitch") in captured["started"]
     assert "bridge worker started" in captured["log"]
     assert "bridge worker finished" in captured["log"]
     assert captured["finished"] == [True]
     assert bridge.is_busy() is False
+
+
+def test_qt_launcher_bridge_check_for_updates_uses_saved_proxy(tmp_path):
+    from gui_qt.adapters.launcher_bridge import LauncherBridge
+    from launcher.update_service import ProxyConfig
+
+    bridge = LauncherBridge(settings_path=tmp_path / "ui_settings.json")
+    bridge.save_settings(
+        "ferrum",
+        {"ferrum": "COM2", "makcu": "COM3"},
+        {"ferrum": 115200, "makcu": 115200},
+        update_repo="example/ferrum",
+        update_proxy=ProxyConfig(enabled=True, scheme="http", host="proxy.local", port=8080),
+    )
+
+    captured = {}
+
+    def fake_check(**kwargs):
+        captured.update(kwargs)
+        return {"version": "1.0.04", "is_newer": True}
+
+    bridge._update_checker = fake_check
+
+    result = bridge.check_for_updates("1.0.03")
+
+    assert result["version"] == "1.0.04"
+    assert captured["repo"] == "example/ferrum"
+    assert captured["proxy"].host == "proxy.local"
+    assert captured["current_version"] == "1.0.03"
+
+
+def test_qt_launcher_bridge_check_for_updates_returns_prerelease_flag(tmp_path):
+    from gui_qt.adapters.launcher_bridge import LauncherBridge
+
+    bridge = LauncherBridge(settings_path=tmp_path / "ui_settings.json")
+
+    def fake_check(**kwargs):
+        return {"version": "1.0.04-beta.1", "is_newer": False, "is_prerelease": True, "assets": []}
+
+    bridge._update_checker = fake_check
+
+    result = bridge.check_for_updates("1.0.03")
+
+    assert result["is_prerelease"] is True
+
+
+def test_qt_launcher_bridge_check_for_updates_returns_release_issues(tmp_path):
+    from gui_qt.adapters.launcher_bridge import LauncherBridge
+
+    bridge = LauncherBridge(settings_path=tmp_path / "ui_settings.json")
+
+    def fake_check(**kwargs):
+        return {
+            "version": "1.0.04",
+            "is_newer": True,
+            "is_prerelease": False,
+            "tag_name": "v1.0.04",
+            "assets": [{"name": "client.zip", "download_url": "https://example.com/client.zip", "sha256": ""}],
+        }
+
+    bridge._update_checker = fake_check
+
+    result = bridge.check_for_updates("1.0.03")
+
+    assert result["release_issues"]
+    assert any("FerrumBot-v1.0.04-portable.zip" in issue for issue in result["release_issues"])
+
+
+def test_qt_launcher_bridge_download_and_apply_update_uses_saved_proxy(tmp_path):
+    from gui_qt.adapters.launcher_bridge import LauncherBridge
+    from launcher.update_service import ProxyConfig
+
+    bridge = LauncherBridge(settings_path=tmp_path / "ui_settings.json")
+    bridge.save_settings(
+        "ferrum",
+        {"ferrum": "COM2", "makcu": "COM3"},
+        {"ferrum": 115200, "makcu": 115200},
+        update_repo="example/ferrum",
+        update_proxy=ProxyConfig(enabled=True, scheme="socks5", host="127.0.0.1", port=7890),
+    )
+
+    captured = {}
+
+    def fake_download(**kwargs):
+        captured.update(kwargs)
+        return {"download_path": "C:\\temp\\FerrumBot-v1.0.04-portable.zip"}
+
+    bridge._update_downloader = fake_download
+
+    result = bridge.download_and_apply_update(
+        {
+            "tag_name": "v1.0.04",
+            "assets": [{"name": "FerrumBot-v1.0.04-portable.zip", "download_url": "https://example.com/update.zip"}],
+        },
+        install_dir="C:\\FerrumBot",
+        restart_executable="C:\\FerrumBot\\FerrumBot.exe",
+        restart_args=[],
+    )
+
+    assert result["download_path"].endswith(".zip")
+    assert captured["proxy"].scheme == "socks5"
+    assert captured["install_dir"] == "C:\\FerrumBot"
+    assert captured["release_info"]["tag_name"] == "v1.0.04"
+
+
+def test_qt_launcher_settings_page_exposes_update_controls_and_checks_updates():
+    from launcher.settings import LauncherSettings
+    from launcher.update_service import ProxyConfig
+    from gui_qt.main import build_application
+    from gui_qt.window import FerrumMainWindow
+
+    class FakeBridge(QObject):
+        log_emitted = Signal(str)
+        task_started = Signal(str)
+        task_finished = Signal(bool)
+        trigger_started = Signal()
+        trigger_finished = Signal()
+        probe_finished = Signal(bool, str)
+
+        def __init__(self):
+            super().__init__()
+            self.saved = []
+            self.checked_versions = []
+
+        def load_settings(self):
+            return LauncherSettings(
+                driver_backend="makcu",
+                ports={"ferrum": "COM2", "makcu": "COM8"},
+                baudrates={"ferrum": 115200, "makcu": 9600},
+                update_repo="example/ferrum",
+                update_proxy=ProxyConfig(enabled=True, scheme="http", host="127.0.0.1", port=7890),
+            )
+
+        def save_settings(self, driver_backend, ports, baudrates=None, keyboard_via_python=False, update_repo=None, update_proxy=None, task_checked=None, task_visibility=None, task_order=None):
+            self.saved.append(
+                {
+                    "driver_backend": driver_backend,
+                    "ports": ports,
+                    "baudrates": baudrates,
+                    "keyboard_via_python": keyboard_via_python,
+                    "update_repo": update_repo,
+                    "update_proxy": update_proxy,
+                }
+            )
+
+        def load_interface(self):
+            return {"controller": []}
+
+        def check_for_updates(self, current_version):
+            self.checked_versions.append(current_version)
+            return {
+                "version": "1.0.04",
+                "is_newer": True,
+                "tag_name": "v1.0.04",
+                "is_prerelease": False,
+                "assets": [
+                    {
+                        "name": "FerrumBot-v1.0.04-portable.zip",
+                        "download_url": "https://example.com/FerrumBot-v1.0.04-portable.zip",
+                        "size": 1024,
+                        "sha256": "deadbeef",
+                    }
+                ],
+            }
+
+        def is_busy(self):
+            return False
+
+    app = build_application()
+    bridge = FakeBridge()
+    window = FerrumMainWindow(bridge=bridge)
+
+    assert window.update_repo_entry.text() == "example/ferrum"
+    assert window.update_proxy_checkbox.isChecked() is True
+    assert window.update_proxy_host_entry.text() == "127.0.0.1"
+    assert window.update_proxy_port_entry.text() == "7890"
+
+    window.check_update_button.click()
+
+    assert bridge.checked_versions == ["1.0.03"]
+    assert "1.0.04" in window.update_status_label.text()
+    assert window.download_update_button.isEnabled() is True
+
+    window.update_repo_entry.setText("new/repo")
+    window.update_repo_entry.editingFinished.emit()
+
+    assert bridge.saved[-1]["update_repo"] == "new/repo"
+    assert bridge.saved[-1]["update_proxy"].host == "127.0.0.1"
+
+    window.close()
+    app.quit()
+
+
+def test_qt_launcher_settings_page_downloads_checked_update():
+    from launcher.settings import LauncherSettings
+    from launcher.update_service import ProxyConfig
+    from gui_qt.main import build_application
+    from gui_qt.window import FerrumMainWindow
+
+    class FakeBridge(QObject):
+        log_emitted = Signal(str)
+        task_started = Signal(str)
+        task_finished = Signal(bool)
+        trigger_started = Signal()
+        trigger_finished = Signal()
+        probe_finished = Signal(bool, str)
+
+        def __init__(self):
+            super().__init__()
+            self.download_calls = []
+
+        def load_settings(self):
+            return LauncherSettings(
+                update_repo="example/ferrum",
+                update_proxy=ProxyConfig(enabled=False),
+            )
+
+        def save_settings(self, driver_backend, ports, baudrates=None, keyboard_via_python=False, update_repo=None, update_proxy=None, task_checked=None, task_visibility=None, task_order=None):
+            return None
+
+        def load_interface(self):
+            return {"controller": []}
+
+        def check_for_updates(self, current_version):
+            return {
+                "version": "1.0.04",
+                "is_newer": True,
+                "tag_name": "v1.0.04",
+                "is_prerelease": False,
+                "assets": [
+                    {
+                        "name": "FerrumBot-v1.0.04-portable.zip",
+                        "download_url": "https://example.com/FerrumBot-v1.0.04-portable.zip",
+                        "size": 1024,
+                        "sha256": "deadbeef",
+                    }
+                ],
+            }
+
+        def download_and_apply_update(self, release_info, install_dir, restart_executable, restart_args):
+            self.download_calls.append(
+                {
+                    "release_info": release_info,
+                    "install_dir": install_dir,
+                    "restart_executable": restart_executable,
+                    "restart_args": restart_args,
+                }
+            )
+
+        def is_busy(self):
+            return False
+
+    app = build_application()
+    bridge = FakeBridge()
+    window = FerrumMainWindow(bridge=bridge)
+
+    window.check_update_button.click()
+    window.download_update_button.click()
+
+    assert bridge.download_calls
+    assert bridge.download_calls[-1]["release_info"]["tag_name"] == "v1.0.04"
+    assert bridge.download_calls[-1]["restart_args"]
+
+    window.close()
+    app.quit()
+
+
+def test_qt_launcher_settings_page_disables_download_for_prerelease():
+    from launcher.settings import LauncherSettings
+    from gui_qt.main import build_application
+    from gui_qt.window import FerrumMainWindow
+
+    class FakeBridge(QObject):
+        log_emitted = Signal(str)
+        task_started = Signal(str)
+        task_finished = Signal(bool)
+        trigger_started = Signal()
+        trigger_finished = Signal()
+        probe_finished = Signal(bool, str)
+
+        def load_settings(self):
+            return LauncherSettings(update_repo="example/ferrum")
+
+        def save_settings(self, *args, **kwargs):
+            return None
+
+        def load_interface(self):
+            return {"controller": []}
+
+        def check_for_updates(self, current_version):
+            return {
+                "version": "1.0.04-beta.1",
+                "is_newer": False,
+                "is_prerelease": True,
+                "tag_name": "v1.0.04-beta.1",
+                "assets": [],
+            }
+
+        def is_busy(self):
+            return False
+
+    app = build_application()
+    window = FerrumMainWindow(bridge=FakeBridge())
+
+    window.check_update_button.click()
+
+    assert "预发布" in window.update_status_label.text()
+    assert window.download_update_button.isEnabled() is False
+
+    window.close()
+    app.quit()
+
+
+def test_qt_launcher_settings_page_disables_download_without_sha256():
+    from launcher.settings import LauncherSettings
+    from gui_qt.main import build_application
+    from gui_qt.window import FerrumMainWindow
+
+    class FakeBridge(QObject):
+        log_emitted = Signal(str)
+        task_started = Signal(str)
+        task_finished = Signal(bool)
+        trigger_started = Signal()
+        trigger_finished = Signal()
+        probe_finished = Signal(bool, str)
+
+        def load_settings(self):
+            return LauncherSettings(update_repo="example/ferrum")
+
+        def save_settings(self, *args, **kwargs):
+            return None
+
+        def load_interface(self):
+            return {"controller": []}
+
+        def check_for_updates(self, current_version):
+            return {
+                "version": "1.0.04",
+                "is_newer": True,
+                "is_prerelease": False,
+                "tag_name": "v1.0.04",
+                "assets": [
+                    {
+                        "name": "FerrumBot-v1.0.04-portable.zip",
+                        "download_url": "https://example.com/FerrumBot-v1.0.04-portable.zip",
+                        "size": 1024,
+                        "sha256": "",
+                    }
+                ],
+            }
+
+        def is_busy(self):
+            return False
+
+    app = build_application()
+    window = FerrumMainWindow(bridge=FakeBridge())
+
+    window.check_update_button.click()
+
+    assert "校验" in window.update_status_label.text()
+    assert window.download_update_button.isEnabled() is False
+
+    window.close()
+    app.quit()
 
 
 def test_qt_launcher_bridge_stop_task_requests_cancellation():
@@ -380,20 +834,20 @@ def test_qt_launcher_bridge_focuses_lostark_before_running_task():
         calls.append("focus")
         return FocusResult()
 
-    def fake_runner(task_name, controller_name, port=None, log_writer=None, stop_event=None):
-        calls.append(("task", task_name, controller_name, port))
+    def fake_runner(task_name, controller_name, port=None, baudrate=None, log_writer=None, stop_event=None):
+        calls.append(("task", task_name, controller_name, port, baudrate))
         release.wait(timeout=2)
         return True
 
     bridge._focus_executor = fake_focus
     bridge._task_executor = fake_runner
 
-    bridge.start_task("CharacterSwitch", "KMBox-Default", "COM9")
+    bridge.start_task("CharacterSwitch", "KMBox-Default", "COM9", 57600)
     release.set()
     bridge.wait_for_idle(timeout=2)
 
     assert calls[0] == "focus"
-    assert calls[1] == ("task", "CharacterSwitch", "KMBox-Default", "COM9")
+    assert calls[1] == ("task", "CharacterSwitch", "KMBox-Default", "COM9", 57600)
 
 
 def test_qt_launcher_bridge_waits_one_second_after_focus_before_running_task():
@@ -417,8 +871,8 @@ def test_qt_launcher_bridge_waits_one_second_after_focus_before_running_task():
     def fake_sleep(seconds):
         calls.append(("sleep", seconds))
 
-    def fake_runner(task_name, controller_name, port=None, log_writer=None, stop_event=None):
-        calls.append(("task", task_name, controller_name, port))
+    def fake_runner(task_name, controller_name, port=None, baudrate=None, log_writer=None, stop_event=None):
+        calls.append(("task", task_name, controller_name, port, baudrate))
         release.wait(timeout=2)
         return True
 
@@ -426,15 +880,80 @@ def test_qt_launcher_bridge_waits_one_second_after_focus_before_running_task():
     bridge._sleep = fake_sleep
     bridge._task_executor = fake_runner
 
-    bridge.start_task("CharacterSwitch", "KMBox-Default", "COM9")
+    bridge.start_task("CharacterSwitch", "KMBox-Default", "COM9", 19200)
     release.set()
     bridge.wait_for_idle(timeout=2)
 
     assert calls == [
         "focus",
         ("sleep", 1.0),
-        ("task", "CharacterSwitch", "KMBox-Default", "COM9"),
+        ("task", "CharacterSwitch", "KMBox-Default", "COM9", 19200),
     ]
+
+
+def test_qt_launcher_bridge_emits_trigger_error_log_when_trigger_executor_fails():
+    from gui_qt.adapters.launcher_bridge import LauncherBridge
+
+    app = QApplication.instance() or QApplication([])
+    _ = app
+    bridge = LauncherBridge()
+    captured = {"log": [], "finished": []}
+
+    def fake_trigger_executor(**kwargs):
+        raise RuntimeError("trigger exploded")
+
+    bridge._trigger_executor = fake_trigger_executor
+    bridge.log_emitted.connect(captured["log"].append)
+    bridge.trigger_finished.connect(lambda: captured["finished"].append(True))
+
+    bridge.start_trigger({"controller": []}, "makcu", "COM3", 115200)
+    bridge.wait_for_idle(timeout=2)
+
+    assert any("[ERROR] trigger failed: trigger exploded" == message for message in captured["log"])
+    assert captured["finished"] == [True]
+
+
+def test_build_controller_override_includes_baudrate():
+    from launcher.service import build_controller_override
+
+    override = build_controller_override("COM9", 57600)
+
+    assert override == {"serial": {"port": "COM9", "baudrate": 57600}}
+
+
+def test_probe_controller_uses_baudrate_override(monkeypatch):
+    from launcher import service as launcher_service
+
+    captured = {}
+
+    class FakeController:
+        def is_connected(self):
+            return True
+
+        def handshake(self):
+            return True
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(launcher_service, "resolve_controller_name", lambda interface_config, driver_backend: "KMBox-Default")
+    monkeypatch.setattr(
+        launcher_service,
+        "resolve_controller_config",
+        lambda interface_config, controller_name: {"name": controller_name, "serial": {"port": "COM2", "baudrate": 115200}},
+    )
+
+    def fake_create(config):
+        captured["config"] = config
+        return FakeController()
+
+    monkeypatch.setattr("launcher.service.service_main.create_hardware_controller", fake_create)
+
+    result = launcher_service.probe_controller({"controller": []}, "ferrum", "COM9", 57600)
+
+    assert result.ok is True
+    assert captured["config"]["serial"]["port"] == "COM9"
+    assert captured["config"]["serial"]["baudrate"] == 57600
 
 
 def test_qt_launcher_window_builds_expected_tabs():
@@ -570,6 +1089,190 @@ def test_qt_launcher_window_restores_saved_task_queue_state():
     app.quit()
 
 
+def test_qt_launcher_window_restores_saved_baudrates_per_backend():
+    from launcher.settings import LauncherSettings
+    from gui_qt.main import build_application
+    from gui_qt.window import FerrumMainWindow
+
+    class FakeBridge(QObject):
+        log_emitted = Signal(str)
+        task_started = Signal(str)
+        task_finished = Signal(bool)
+        trigger_started = Signal()
+        trigger_finished = Signal()
+        probe_finished = Signal(bool, str)
+
+        def load_settings(self):
+            return LauncherSettings(
+                driver_backend="makcu",
+                ports={"ferrum": "COM2", "makcu": "COM9"},
+                baudrates={"ferrum": 115200, "makcu": 9600},
+            )
+
+        def save_settings(self, driver_backend, ports, baudrates=None, task_checked=None, task_visibility=None, task_order=None):
+            self.saved = (driver_backend, ports, baudrates)
+
+        def load_interface(self):
+            return {}
+
+        def is_busy(self):
+            return False
+
+    app = build_application()
+    window = FerrumMainWindow(bridge=FakeBridge())
+
+    assert window.port_entry.text() == "COM9"
+    assert window.baudrate_entry.text() == "9600"
+
+    ferrum_button = next(button for button in window.findChildren(QPushButton, "backendToggle") if button.text() == "Ferrum")
+    ferrum_button.click()
+
+    assert window.port_entry.text() == "COM2"
+    assert window.baudrate_entry.text() == "115200"
+
+    window.close()
+    app.quit()
+
+
+def test_qt_launcher_window_restores_makcu_python_keyboard_toggle():
+    from launcher.settings import LauncherSettings
+    from gui_qt.main import build_application
+    from gui_qt.window import FerrumMainWindow
+
+    class FakeBridge(QObject):
+        log_emitted = Signal(str)
+        task_started = Signal(str)
+        task_finished = Signal(bool)
+        trigger_started = Signal()
+        trigger_finished = Signal()
+        probe_finished = Signal(bool, str)
+
+        def load_settings(self):
+            return LauncherSettings(
+                driver_backend="makcu",
+                ports={"ferrum": "COM2", "makcu": "COM9"},
+                baudrates={"ferrum": 115200, "makcu": 9600},
+                keyboard_via_python=True,
+            )
+
+        def save_settings(self, driver_backend, ports, baudrates=None, keyboard_via_python=False, task_checked=None, task_visibility=None, task_order=None):
+            self.saved = (driver_backend, ports, baudrates, keyboard_via_python)
+
+        def load_interface(self):
+            return {}
+
+        def is_busy(self):
+            return False
+
+    app = build_application()
+    window = FerrumMainWindow(bridge=FakeBridge())
+
+    assert window.keyboard_path_checkbox.isChecked() is True
+    assert window.keyboard_path_checkbox.isHidden() is False
+
+    ferrum_button = next(button for button in window.findChildren(QPushButton, "backendToggle") if button.text() == "Ferrum")
+    ferrum_button.click()
+
+    assert window.keyboard_path_checkbox.isHidden() is True
+
+    window.close()
+    app.quit()
+
+
+def test_qt_launcher_window_persists_makcu_python_keyboard_toggle():
+    from launcher.settings import LauncherSettings
+    from gui_qt.main import build_application
+    from gui_qt.window import FerrumMainWindow
+
+    class FakeBridge(QObject):
+        log_emitted = Signal(str)
+        task_started = Signal(str)
+        task_finished = Signal(bool)
+        trigger_started = Signal()
+        trigger_finished = Signal()
+        probe_finished = Signal(bool, str)
+
+        def __init__(self):
+            super().__init__()
+            self.saved = []
+
+        def load_settings(self):
+            return LauncherSettings(
+                driver_backend="makcu",
+                ports={"ferrum": "COM2", "makcu": "COM9"},
+                baudrates={"ferrum": 115200, "makcu": 9600},
+                keyboard_via_python=False,
+            )
+
+        def save_settings(self, driver_backend, ports, baudrates=None, keyboard_via_python=False, task_checked=None, task_visibility=None, task_order=None):
+            self.saved.append((driver_backend, dict(ports), dict(baudrates or {}), keyboard_via_python))
+
+        def load_interface(self):
+            return {}
+
+        def is_busy(self):
+            return False
+
+    app = build_application()
+    bridge = FakeBridge()
+    window = FerrumMainWindow(bridge=bridge)
+
+    window.keyboard_path_checkbox.setChecked(True)
+
+    assert bridge.saved[-1] == ("makcu", {"ferrum": "COM2", "makcu": "COM9"}, {"ferrum": 115200, "makcu": 9600}, True)
+
+    window.close()
+    app.quit()
+
+
+def test_qt_launcher_window_persists_edited_baudrate():
+    from launcher.settings import LauncherSettings
+    from gui_qt.main import build_application
+    from gui_qt.window import FerrumMainWindow
+
+    class FakeBridge(QObject):
+        log_emitted = Signal(str)
+        task_started = Signal(str)
+        task_finished = Signal(bool)
+        trigger_started = Signal()
+        trigger_finished = Signal()
+        probe_finished = Signal(bool, str)
+
+        def __init__(self):
+            super().__init__()
+            self.saved = []
+
+        def load_settings(self):
+            return LauncherSettings(
+                driver_backend="makcu",
+                ports={"ferrum": "COM2", "makcu": "COM9"},
+                baudrates={"ferrum": 115200, "makcu": 9600},
+            )
+
+        def save_settings(self, driver_backend, ports, baudrates=None, task_checked=None, task_visibility=None, task_order=None):
+            self.saved.append((driver_backend, dict(ports), dict(baudrates or {})))
+
+        def load_interface(self):
+            return {}
+
+        def is_busy(self):
+            return False
+
+    app = build_application()
+    bridge = FakeBridge()
+    window = FerrumMainWindow(bridge=bridge)
+
+    window.baudrate_entry.setText("57600")
+    window.baudrate_entry.editingFinished.emit()
+
+    assert bridge.saved[-1] == ("makcu", {"ferrum": "COM2", "makcu": "COM9"}, {"ferrum": 115200, "makcu": 57600})
+    assert window.baudrates["makcu"] == 57600
+    assert window.baudrate_entry.text() == "57600"
+
+    window.close()
+    app.quit()
+
+
 def test_qt_launcher_window_starts_selected_task_and_updates_runtime():
     from launcher.settings import LauncherSettings
     from gui_qt.main import build_application
@@ -624,6 +1327,55 @@ def test_qt_launcher_window_starts_selected_task_and_updates_runtime():
     assert window.runtime_state_value.text() == "空闲"
     assert window.current_task_value.text() == "-"
     assert window.start_button.text() == "Link Start!"
+
+    window.close()
+    app.quit()
+
+
+def test_qt_launcher_window_starts_selected_task_with_selected_baudrate():
+    from launcher.settings import LauncherSettings
+    from gui_qt.main import build_application
+    from gui_qt.window import FerrumMainWindow
+
+    class FakeBridge(QObject):
+        log_emitted = Signal(str)
+        task_started = Signal(str)
+        task_finished = Signal(bool)
+        trigger_started = Signal()
+        trigger_finished = Signal()
+        probe_finished = Signal(bool, str)
+
+        def __init__(self):
+            super().__init__()
+            self.started = []
+
+        def load_settings(self):
+            return LauncherSettings(
+                driver_backend="makcu",
+                ports={"ferrum": "COM2", "makcu": "COM9"},
+                baudrates={"ferrum": 115200, "makcu": 57600},
+            )
+
+        def save_settings(self, driver_backend, ports, baudrates=None, task_checked=None, task_visibility=None, task_order=None):
+            self.saved = (driver_backend, ports, baudrates)
+
+        def load_interface(self):
+            return {}
+
+        def start_task(self, task_name, controller_name, port=None, baudrate=None):
+            self.started.append((task_name, controller_name, port, baudrate))
+            self.task_started.emit(task_name)
+
+        def is_busy(self):
+            return False
+
+    app = build_application()
+    bridge = FakeBridge()
+    window = FerrumMainWindow(bridge=bridge)
+
+    window.start_button.click()
+
+    assert bridge.started == [("AccountIndexing", "MAKCU-Default", "COM9", 57600)]
 
     window.close()
     app.quit()
@@ -763,6 +1515,54 @@ def test_qt_launcher_window_probes_selected_driver_and_updates_status():
     bridge.probe_finished.emit(False, "FERRUM 握手失败")
     app.processEvents()
     assert window.connection_value.text() == "未连接"
+
+    window.close()
+    app.quit()
+
+
+def test_qt_launcher_window_probes_selected_driver_with_selected_baudrate():
+    from launcher.settings import LauncherSettings
+    from gui_qt.main import build_application
+    from gui_qt.window import FerrumMainWindow
+
+    class FakeBridge(QObject):
+        log_emitted = Signal(str)
+        task_started = Signal(str)
+        task_finished = Signal(bool)
+        trigger_started = Signal()
+        trigger_finished = Signal()
+        probe_finished = Signal(bool, str)
+
+        def __init__(self):
+            super().__init__()
+            self.probes = []
+
+        def load_settings(self):
+            return LauncherSettings(
+                driver_backend="ferrum",
+                ports={"ferrum": "COM6", "makcu": "COM9"},
+                baudrates={"ferrum": 38400, "makcu": 9600},
+            )
+
+        def save_settings(self, driver_backend, ports, baudrates=None, task_checked=None, task_visibility=None, task_order=None):
+            self.saved = (driver_backend, ports, baudrates)
+
+        def load_interface(self):
+            return {"controller": []}
+
+        def probe(self, interface_config, driver_backend, port, baudrate=None):
+            self.probes.append((interface_config, driver_backend, port, baudrate))
+
+        def is_busy(self):
+            return False
+
+    app = build_application()
+    bridge = FakeBridge()
+    window = FerrumMainWindow(bridge=bridge)
+
+    window.detect_button.click()
+
+    assert bridge.probes == [({"controller": []}, "ferrum", "COM6", 38400)]
 
     window.close()
     app.quit()
@@ -1030,6 +1830,21 @@ def test_service_run_task_resolves_pipeline_entry_name_mismatch(monkeypatch):
     assert captured["vision_engine"] is fake_components.vision_engine
 
 
+def test_initialize_sets_working_directory_to_project_root(monkeypatch, tmp_path):
+    from agent.py_service import main as service_main
+
+    monkeypatch.chdir(tmp_path)
+
+    components = service_main.initialize(
+        config_path=str(service_main.project_root / "assets" / "interface.json"),
+        skip_hardware=True,
+        test_mode=True,
+    )
+
+    assert Path.cwd() == service_main.project_root
+    assert components.config["name"] == "FerrumBot"
+
+
 def test_gui_launcher_entry_delegates_to_qt_main(monkeypatch):
     import gui_launcher
 
@@ -1054,7 +1869,7 @@ def test_qt_launcher_window_uses_laa_title_and_empty_config_panel():
     app = build_application()
     window = FerrumMainWindow()
 
-    assert window.title_bar.title_label.text() == "LAA 1.0.0"
+    assert window.title_bar.title_label.text() == "LAA 1.0.03"
     assert window.config_placeholder_label.text() == "暂无配置项"
     assert "主界面迁移中" not in window.config_placeholder_label.text()
 

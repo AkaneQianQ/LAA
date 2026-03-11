@@ -326,6 +326,8 @@ class WaitHandler(ActionHandler):
 class CustomActionHandler(ActionHandler):
     """Handle Custom action - delegates to registered functions"""
 
+    FAILURE_SENTINEL = "__PIPELINE_ACTION_FAILED__"
+
     def __init__(self, registry: Dict[str, Callable]):
         super().__init__("Custom")
         self.registry = registry
@@ -343,8 +345,12 @@ class CustomActionHandler(ActionHandler):
                 'variables': context.variables,
                 'execution_context': context,
             }
-            self.registry[custom_action](ctx)
+            result = self.registry[custom_action](ctx)
             print(f"[Action] Custom: {custom_action}")
+            if result is False:
+                context.variables[self.FAILURE_SENTINEL] = custom_action
+                return ExecutionResult.FAILED
+            context.variables.pop(self.FAILURE_SENTINEL, None)
             return ExecutionResult.SUCCESS
 
         print(f"[Action] Custom action not found: {custom_action}")
@@ -549,6 +555,8 @@ class PipelineExecutor:
 
                 if result == ExecutionResult.FAILED and "on_error" in node:
                     return node["on_error"][0] if node["on_error"] else None
+                if result == ExecutionResult.FAILED:
+                    return CustomActionHandler.FAILURE_SENTINEL
             else:
                 print(f"[Warning] Action handler not found: {action_type}")
 
@@ -608,6 +616,9 @@ class PipelineExecutor:
                     return False
 
             next_node = self.execute_node(current_node, context)
+            if next_node == CustomActionHandler.FAILURE_SENTINEL:
+                print(f"[Pipeline] Action failed at node: {current_node}")
+                return False
 
             self.execution_log.append({
                 "node": current_node,

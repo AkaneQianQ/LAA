@@ -221,6 +221,7 @@
             "type": "Custom",
             "custom_recognition": "FirstPageIncomplete",
             "param": {
+                "skip_first_slot": true,
                 "occupancy_mode": "anchor_color",
                 "anchor_rgb": [
                     101,

@@ -30,6 +30,7 @@ try:
     from agent.py_service.register import register_all_modules, Registry, RecognitionResult
     from agent.py_service.pkg.ferrum.controller import FerrumController
     from agent.py_service.pkg.makcu.controller import MakcuController
+    from agent.py_service.pkg.input import HybridMakcuController
     from agent.py_service.pkg.vision.engine import VisionEngine
     from agent.py_service.pkg.vision.frame_cache import FrameCache
 except ImportError as e:
@@ -39,7 +40,7 @@ except ImportError as e:
     raise
 
 # 版本信息
-VERSION = "1.0.0"
+VERSION = "1.0.03"
 
 
 class ServiceError(Exception):
@@ -239,10 +240,12 @@ def create_hardware_controller(controller_config: Dict[str, Any]):
     """Create hardware controller from interface config."""
     serial_config = controller_config.get("serial", {})
     driver = str(controller_config.get("driver", "ferrum")).lower()
+    input_config = controller_config.get("input", {})
+    keyboard_via_python = bool(input_config.get("keyboard_via_python", False))
 
     controller_cls = FerrumController
     if driver == "makcu":
-        controller_cls = MakcuController
+        controller_cls = HybridMakcuController if keyboard_via_python else MakcuController
 
     return controller_cls(
         port=serial_config.get("port", "COM2"),
@@ -281,6 +284,10 @@ def initialize(
     if debug_mode:
         print("[调试] 初始化阶段启用调试日志")
     print(f"{'='*50}\n")
+
+    # Normalize runtime base directory so relative assets/data paths behave
+    # the same in source runs and in PyInstaller portable builds.
+    os.chdir(project_root)
 
     # 1. 加载配置
     try:

@@ -10,6 +10,7 @@ import cv2
 
 from agent.py_service.modules.account_indexing.register import (
     ALL_SLOT_ROIS,
+    _choose_target_ui_slot,
     _find_target_character_ui_slot_on_page,
     _is_duplicate_character_by_image,
     _get_next_character_index,
@@ -229,6 +230,24 @@ def test_find_target_character_ui_slot_on_page_locates_target_without_full_assig
     assert found_slot == target_slot
 
 
+def test_choose_target_ui_slot_falls_back_to_expected_slot_when_allowed():
+    chosen_slot = _choose_target_ui_slot(
+        verified_ui_slot=None,
+        target_ui_slot=2,
+        allow_unverified_target_click=True,
+    )
+    assert chosen_slot == 2
+
+
+def test_choose_target_ui_slot_still_blocks_when_fallback_disabled():
+    chosen_slot = _choose_target_ui_slot(
+        verified_ui_slot=None,
+        target_ui_slot=2,
+        allow_unverified_target_click=False,
+    )
+    assert chosen_slot is None
+
+
 def test_delete_character_by_account_slot_removes_only_requested_slot(tmp_path):
     db_path = tmp_path / "accounts.db"
     init_database(str(db_path))
@@ -276,6 +295,25 @@ def test_first_page_incomplete_recognition_does_not_match_when_home_page_is_full
 
     assert result.matched is False
     assert result.payload["occupied_slots"] == list(range(9))
+    assert result.payload["empty_slots"] == []
+
+
+def test_first_page_incomplete_recognition_ignores_first_slot_when_requested():
+    screenshot = _make_first_page_screenshot([1, 2, 3, 4, 5, 6, 7, 8])
+
+    result = first_page_incomplete_recognition({
+        "screenshot": screenshot,
+        "param": {
+            "occupancy_mode": "anchor_color",
+            "anchor_rgb": [101, 96, 70],
+            "anchor_tolerance": 6,
+            "anchor_min_pixels": 1,
+            "skip_first_slot": True,
+        },
+    })
+
+    assert result.matched is False
+    assert result.payload["occupied_slots"] == [1, 2, 3, 4, 5, 6, 7, 8]
     assert result.payload["empty_slots"] == []
 
 
@@ -385,6 +423,8 @@ def test_save_account_indexing_staging_imports_into_persistent_storage(tmp_path)
     assert len(accounts) == 1
     chars = list_characters_by_account(str(db_path), int(accounts[0]["id"]))
     assert len(chars) == 2
+    account_info = json.loads((data_dir / "accounts" / result["account_hash"] / "account_info.json").read_text(encoding="utf-8"))
+    assert account_info["character_count"] == 3
     assert not (data_dir / "staging" / "account_indexing" / variables["staging_session_id"]).exists()
 
 

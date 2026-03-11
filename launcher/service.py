@@ -42,6 +42,7 @@ except ImportError:
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "assets" / "interface.json"
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+PROBE_LOG_PATH = PROJECT_ROOT / "logs" / "makcu_probe.log"
 
 
 @dataclass(frozen=True)
@@ -74,6 +75,13 @@ class _LineWriter(io.TextIOBase):
         if self._buffer:
             self._callback(self._buffer)
             self._buffer = ""
+
+
+def append_probe_log(message: str) -> None:
+    PROBE_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    timestamp = __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with PROBE_LOG_PATH.open("a", encoding="utf-8") as fp:
+        fp.write(f"[{timestamp}] {message}\n")
 
 
 def load_interface_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
@@ -155,8 +163,18 @@ def resolve_controller_name(interface_config: Dict[str, Any], driver_backend: st
     raise ValueError(f"no controller found for backend: {driver_backend}")
 
 
-def build_controller_override(port: str) -> Dict[str, Any]:
-    return {"serial": {"port": str(port)}}
+def build_controller_override(
+    port: str,
+    baudrate: Optional[int] = None,
+    keyboard_via_python: bool = False,
+) -> Dict[str, Any]:
+    serial = {"port": str(port)}
+    if baudrate is not None:
+        serial["baudrate"] = int(baudrate)
+    override = {"serial": serial}
+    if keyboard_via_python:
+        override["input"] = {"keyboard_via_python": True}
+    return override
 
 
 def resolve_controller_config(interface_config: Dict[str, Any], controller_name: str) -> Dict[str, Any]:
@@ -171,22 +189,38 @@ def apply_controller_override(controller_config: Dict[str, Any], controller_over
     if controller_override and "serial" in controller_override:
         merged.setdefault("serial", {})
         merged["serial"].update(controller_override["serial"])
+    if controller_override and "input" in controller_override:
+        merged.setdefault("input", {})
+        merged["input"].update(controller_override["input"])
     return merged
 
 
-def probe_controller(interface_config: Dict[str, Any], driver_backend: str, port: str) -> ProbeResult:
+def probe_controller(
+    interface_config: Dict[str, Any],
+    driver_backend: str,
+    port: str,
+    baudrate: Optional[int] = None,
+    keyboard_via_python: bool = False,
+) -> ProbeResult:
     controller_name = resolve_controller_name(interface_config, driver_backend)
     controller_config = resolve_controller_config(interface_config, controller_name)
-    merged_config = apply_controller_override(controller_config, build_controller_override(port))
+    merged_config = apply_controller_override(
+        controller_config,
+        build_controller_override(port, baudrate, keyboard_via_python=keyboard_via_python),
+    )
     controller = None
     try:
         controller = service_main.create_hardware_controller(merged_config)
         if not controller.is_connected():
+            append_probe_log(f"{driver_backend.upper()} port={port} result=not_connected")
             return ProbeResult(False, f"{driver_backend.upper()} 未连接")
         if not controller.handshake():
+            append_probe_log(f"{driver_backend.upper()} port={port} result=handshake_failed")
             return ProbeResult(False, f"{driver_backend.upper()} 握手失败")
+        append_probe_log(f"{driver_backend.upper()} port={port} result=connected")
         return ProbeResult(True, f"{driver_backend.upper()} 已连接: {port}")
     except Exception as exc:
+        append_probe_log(f"{driver_backend.upper()} port={port} result=exception detail={exc}")
         return ProbeResult(False, f"{driver_backend.upper()} 检测失败: {exc}")
     finally:
         if controller is not None:
@@ -200,11 +234,13 @@ def run_selected_task(
     task_name: str,
     controller_name: str,
     port: Optional[str] = None,
+    baudrate: Optional[int] = None,
+    keyboard_via_python: bool = False,
     config_path: Optional[Path] = None,
     log_writer: Optional[Callable[[str], None]] = None,
     stop_event: Any = None,
 ) -> bool:
-    controller_override = build_controller_override(port) if port else None
+    controller_override = build_controller_override(port, baudrate, keyboard_via_python=keyboard_via_python) if port else None
     if log_writer is None:
         return bool(
             service_main.run_task(
@@ -287,10 +323,12 @@ def save_account_indexing_staging(db_path: str, data_dir: str, session_id: str) 
         shutil.copy2(src, dst)
         upsert_character(db_path, account_id, idx, str(dst))
 
+    character_count_switchable = len(list_characters_by_account(db_path, account_id))
+    character_count_total = int(summary.get("character_count_total", character_count_switchable + 1))
     info = {
         "account_id": account_id,
         "account_hash": account_hash,
-        "character_count": len(list_characters_by_account(db_path, account_id)),
+        "character_count": character_count_total,
     }
     (account_dir / "account_info.json").write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -301,8 +339,8 @@ def save_account_indexing_staging(db_path: str, data_dir: str, session_id: str) 
     return {
         "account_id": account_id,
         "account_hash": account_hash,
-        "character_count_total": int(summary.get("character_count_total", info["character_count"] + 1)),
-        "character_count_switchable": int(summary.get("character_count_switchable", info["character_count"])),
+        "character_count_total": character_count_total,
+        "character_count_switchable": int(summary.get("character_count_switchable", character_count_switchable)),
     }
 
 

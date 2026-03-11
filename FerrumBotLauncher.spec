@@ -9,6 +9,7 @@ project_root = Path.cwd()
 assets_datas = [(str(project_root / "assets"), "assets")]
 data_datas = [(str(project_root / "data"), "data")] if (project_root / "data").exists() else []
 agent_datas = collect_data_files("agent", include_py_files=True)
+gui_qt_datas = [(str(project_root / "gui_qt" / "theme" / "assets"), "gui_qt/theme/assets")]
 
 hiddenimports = (
     collect_submodules("agent.py_service.modules")
@@ -20,7 +21,7 @@ a = Analysis(
     ["gui_launcher.py"],
     pathex=[str(project_root)],
     binaries=[],
-    datas=assets_datas + data_datas + agent_datas,
+    datas=assets_datas + data_datas + agent_datas + gui_qt_datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},

@@ -22,6 +22,7 @@ from launcher.service import (
 )
 from launcher.settings import LauncherSettings, LauncherSettingsStore
 from launcher.trigger_service import run_independent_trigger
+from launcher.update_service import GitHubUpdateService, ProxyConfig, download_and_apply_release, validate_release_metadata
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -53,6 +54,8 @@ class LauncherBridge(QObject):
         self._focus_executor = focus_lostark_window
         self._probe_executor = probe_controller
         self._trigger_executor = run_independent_trigger
+        self._update_checker = self._default_check_for_updates
+        self._update_downloader = self._default_download_and_apply_update
 
     def load_settings(self) -> LauncherSettings:
         return self._settings_store.load()
@@ -61,6 +64,10 @@ class LauncherBridge(QObject):
         self,
         driver_backend: str,
         ports: dict[str, str],
+        baudrates: dict[str, int] | None = None,
+        keyboard_via_python: bool | None = None,
+        update_repo: str | None = None,
+        update_proxy: ProxyConfig | None = None,
         task_checked: dict[str, bool] | None = None,
         task_visibility: dict[str, bool] | None = None,
         task_order: list[str] | None = None,
@@ -70,6 +77,10 @@ class LauncherBridge(QObject):
             LauncherSettings(
                 driver_backend=driver_backend,
                 ports=ports,
+                baudrates=dict(baudrates if baudrates is not None else current.baudrates),
+                keyboard_via_python=bool(current.keyboard_via_python if keyboard_via_python is None else keyboard_via_python),
+                update_repo=str(update_repo if update_repo is not None else current.update_repo),
+                update_proxy=update_proxy if update_proxy is not None else current.update_proxy,
                 task_checked=dict(task_checked if task_checked is not None else current.task_checked),
                 task_visibility=dict(task_visibility if task_visibility is not None else current.task_visibility),
                 task_order=list(task_order if task_order is not None else current.task_order),
@@ -87,7 +98,14 @@ class LauncherBridge(QObject):
         with self._busy_lock:
             self._busy = busy
 
-    def start_task(self, task_name: str, controller_name: str, port: str | None = None) -> None:
+    def start_task(
+        self,
+        task_name: str,
+        controller_name: str,
+        port: str | None = None,
+        baudrate: int | None = None,
+        keyboard_via_python: bool = False,
+    ) -> None:
         if self.is_busy():
             raise RuntimeError("launcher bridge is busy")
 
@@ -108,6 +126,19 @@ class LauncherBridge(QObject):
                         task_name,
                         controller_name,
                         port=port,
+                        baudrate=baudrate,
+                        keyboard_via_python=keyboard_via_python,
+                        log_writer=self.log_emitted.emit,
+                        stop_event=self._task_stop_event,
+                    )
+                )
+            except TypeError:
+                success = bool(
+                    self._task_executor(
+                        task_name,
+                        controller_name,
+                        port=port,
+                        baudrate=baudrate,
                         log_writer=self.log_emitted.emit,
                         stop_event=self._task_stop_event,
                     )
@@ -133,14 +164,31 @@ class LauncherBridge(QObject):
         self._task_stop_event.set()
         self.log_emitted.emit("[Launcher] task stop requested")
 
-    def probe(self, interface_config: dict, driver_backend: str, port: str) -> None:
+    def probe(
+        self,
+        interface_config: dict,
+        driver_backend: str,
+        port: str,
+        baudrate: int | None = None,
+        keyboard_via_python: bool = False,
+    ) -> None:
         def worker() -> None:
-            result = self._probe_executor(interface_config, driver_backend, port)
+            try:
+                result = self._probe_executor(interface_config, driver_backend, port, baudrate, keyboard_via_python)
+            except TypeError:
+                result = self._probe_executor(interface_config, driver_backend, port, baudrate)
             self.probe_finished.emit(result.ok, result.message)
 
         threading.Thread(target=worker, name="qt-launcher-probe", daemon=True).start()
 
-    def start_trigger(self, interface_config: dict, driver_backend: str, port: str) -> None:
+    def start_trigger(
+        self,
+        interface_config: dict,
+        driver_backend: str,
+        port: str,
+        baudrate: int | None = None,
+        keyboard_via_python: bool = False,
+    ) -> None:
         if self.is_busy():
             raise RuntimeError("launcher bridge is busy")
 
@@ -150,13 +198,27 @@ class LauncherBridge(QObject):
 
         def worker() -> None:
             try:
-                self._trigger_executor(
-                    interface_config=interface_config,
-                    driver_backend=driver_backend,
-                    port=port,
-                    stop_event=self._trigger_stop_event,
-                    log_writer=self.log_emitted.emit,
-                )
+                try:
+                    self._trigger_executor(
+                        interface_config=interface_config,
+                        driver_backend=driver_backend,
+                        port=port,
+                        baudrate=baudrate,
+                        keyboard_via_python=keyboard_via_python,
+                        stop_event=self._trigger_stop_event,
+                        log_writer=self.log_emitted.emit,
+                    )
+                except TypeError:
+                    self._trigger_executor(
+                        interface_config=interface_config,
+                        driver_backend=driver_backend,
+                        port=port,
+                        baudrate=baudrate,
+                        stop_event=self._trigger_stop_event,
+                        log_writer=self.log_emitted.emit,
+                    )
+            except Exception as exc:
+                self.log_emitted.emit(f"[ERROR] trigger failed: {exc}")
             finally:
                 self._set_busy(False)
                 self.trigger_finished.emit()
@@ -181,6 +243,84 @@ class LauncherBridge(QObject):
                 return
             time.sleep(0.01)
         raise TimeoutError("launcher bridge did not become idle before timeout")
+
+    def check_for_updates(self, current_version: str) -> dict:
+        settings = self._settings_store.load()
+        result = dict(
+            self._update_checker(
+                repo=settings.update_repo,
+                current_version=current_version,
+                proxy=settings.update_proxy,
+            )
+        )
+        result["release_issues"] = list(validate_release_metadata(result))
+        return result
+
+    @staticmethod
+    def _default_check_for_updates(repo: str, current_version: str, proxy: ProxyConfig) -> dict:
+        release = GitHubUpdateService(
+            repo=repo,
+            current_version=current_version,
+            proxy=proxy,
+        ).fetch_latest_release()
+        return {
+            "version": release.version,
+            "tag_name": release.tag_name,
+            "published_at": release.published_at,
+            "html_url": release.html_url,
+            "body": release.body,
+            "is_newer": release.is_newer,
+            "is_prerelease": release.is_prerelease,
+            "assets": [
+                {
+                    "name": asset.name,
+                    "download_url": asset.download_url,
+                    "size": asset.size,
+                    "sha256": asset.sha256,
+                }
+                for asset in release.assets
+            ],
+        }
+
+    def download_and_apply_update(
+        self,
+        release_info: dict,
+        install_dir: str,
+        restart_executable: str,
+        restart_args: list[str] | None = None,
+    ) -> dict:
+        settings = self._settings_store.load()
+        return dict(
+            self._update_downloader(
+                repo=settings.update_repo,
+                current_version="0",
+                proxy=settings.update_proxy,
+                release_info=release_info,
+                install_dir=install_dir,
+                restart_executable=restart_executable,
+                restart_args=list(restart_args or []),
+            )
+        )
+
+    @staticmethod
+    def _default_download_and_apply_update(
+        repo: str,
+        current_version: str,
+        proxy: ProxyConfig,
+        release_info: dict,
+        install_dir: str,
+        restart_executable: str,
+        restart_args: list[str],
+    ) -> dict:
+        return download_and_apply_release(
+            repo=repo,
+            current_version=current_version,
+            proxy=proxy,
+            release_info=release_info,
+            install_dir=install_dir,
+            restart_executable=restart_executable,
+            restart_args=restart_args,
+        )
 
     def save_account_indexing_staging(self, session_id: str) -> dict:
         return save_account_indexing_staging(

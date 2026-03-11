@@ -4,6 +4,8 @@ __pycache__/
 build/
 dist/
 dist_refresh/
+release/
+archive/cleanup/
 
 data/ui_settings.json
 

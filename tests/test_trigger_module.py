@@ -2,6 +2,11 @@
 # -*- coding: utf-8 -*-
 """Independent trigger service tests."""
 
+import sys
+from pathlib import Path
+
+import pytest
+
 import launcher.trigger_service as trigger_service
 from launcher.trigger_service import execute_offset_clicks, press_up_up_down, run_trigger_cycle
 from launcher.trigger_service import DEFAULT_TRIGGER_CONFIG
@@ -136,3 +141,33 @@ def test_default_trigger_config_contains_expected_targets():
         "assets/resource/image/target_b_1.png",
         "assets/resource/image/target_b_2.png",
     ]
+
+
+def test_resolve_trigger_asset_path_uses_internal_assets_for_frozen_bundle(tmp_path, monkeypatch):
+    bundle_root = tmp_path / "bundle"
+    internal_asset = bundle_root / "_internal" / "assets" / "resource" / "image" / "target_a.png"
+    internal_asset.parent.mkdir(parents=True)
+    internal_asset.write_bytes(b"fake")
+
+    monkeypatch.setattr(trigger_service, "PROJECT_ROOT", bundle_root)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "_MEIPASS", str(bundle_root / "_internal"), raising=False)
+
+    resolved = trigger_service.resolve_trigger_asset_path("assets/resource/image/target_a.png")
+
+    assert resolved == str(internal_asset)
+
+
+def test_resolve_trigger_asset_path_uses_project_assets_in_source_tree(tmp_path, monkeypatch):
+    project_root = tmp_path / "repo"
+    source_asset = project_root / "assets" / "resource" / "image" / "target_b_1.png"
+    source_asset.parent.mkdir(parents=True)
+    source_asset.write_bytes(b"fake")
+
+    monkeypatch.setattr(trigger_service, "PROJECT_ROOT", project_root)
+    monkeypatch.delattr(sys, "frozen", raising=False)
+    monkeypatch.delattr(sys, "_MEIPASS", raising=False)
+
+    resolved = trigger_service.resolve_trigger_asset_path("assets/resource/image/target_b_1.png")
+
+    assert resolved == str(source_asset)

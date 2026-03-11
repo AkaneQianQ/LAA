@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-MakcuController - Serial communication layer for MAKCU hardware device.
+MakcuController - Legacy API serial communication layer for MAKCU hardware.
 """
 
 import logging
@@ -27,6 +27,18 @@ BUTTON_RIGHT = 1
 BUTTON_MIDDLE = 2
 CLICK_POST_DELAY_S = 0.1
 
+BUTTON_PRESS_COMMANDS = {
+    BUTTON_LEFT: "km.left(1)",
+    BUTTON_RIGHT: "km.right(1)",
+    BUTTON_MIDDLE: "km.middle(1)",
+}
+
+BUTTON_RELEASE_COMMANDS = {
+    BUTTON_LEFT: "km.left(0)",
+    BUTTON_RIGHT: "km.right(0)",
+    BUTTON_MIDDLE: "km.middle(0)",
+}
+
 
 @dataclass
 class ControllerConfig:
@@ -40,12 +52,21 @@ class MakcuConnectionError(Exception):
     """MAKCU device connection error."""
 
 
+def _format_raw_response(buffer: bytearray) -> str:
+    if not buffer:
+        return "<empty>"
+    text = buffer.decode("utf-8", errors="replace").replace("\r", "\\r").replace("\n", "\\n")
+    if len(text) > 160:
+        text = text[:157] + "..."
+    return text
+
+
 class MakcuController:
     """
-    MAKCU hardware controller.
+    MAKCU hardware controller using the documented Legacy ASCII API over serial.
 
-    The public surface matches the controller methods already consumed by the
-    workflow runtime so users can switch backends from configuration.
+    Command shapes are aligned with the official MAKCU API and cross-checked
+    against the working Makcu-main serial sample.
     """
 
     def __init__(self, port: str = "COM3", baudrate: int = 115200, timeout: float = 1.0):
@@ -54,6 +75,7 @@ class MakcuController:
         self.timeout = timeout
         self._serial: Optional[serial.Serial] = None
         self._connected = False
+        self._firmware_version = ""
 
         self._connect()
         self._initialize_device()
@@ -86,7 +108,7 @@ class MakcuController:
 
         while True:
             if time.monotonic() - start_time > self.timeout:
-                raise TimeoutError("Timed out waiting for MAKCU response")
+                raise TimeoutError(f"Timed out waiting for MAKCU response; raw={_format_raw_response(response_buffer)}")
 
             if self._serial.in_waiting:
                 chunk = self._serial.read(self._serial.in_waiting)
@@ -99,21 +121,23 @@ class MakcuController:
         lines = [line.strip() for line in response_buffer.decode("utf-8", errors="ignore").splitlines() if line.strip()]
         if not lines:
             return ""
-        prompt_index = next((idx for idx, line in enumerate(lines) if ">>>" in line), -1)
-        if prompt_index == -1:
-            return "\n".join(lines)
-        return "\n".join(lines[:prompt_index])
+        payload_lines = [line for line in lines if line != ">>>"]
+        return "\n".join(payload_lines)
 
     def _send_command(self, command: str, retry: bool = True, wait_response: bool = True) -> str:
         self._validate_connection()
         try:
+            logger.info("[Hardware] MAKCU send: %s", command)
             self._serial.write(f"{command}\r\n".encode("utf-8"))
             if not wait_response:
+                logger.info("[Hardware] MAKCU ack: %s -> <no-wait>", command)
                 return ""
-            return self._read_response()
+            response = self._read_response()
+            logger.info("[Hardware] MAKCU ack: %s -> %s", command, response or "<empty>")
+            return response
         except (serial.SerialException, TimeoutError) as exc:
             if retry:
-                time.sleep(0.1)
+                time.sleep(0.05)
                 return self._send_command(command, retry=False, wait_response=wait_response)
             raise MakcuConnectionError(f"Command failed '{command}': {exc}") from exc
 
@@ -121,7 +145,11 @@ class MakcuController:
         if self._serial and self._serial.is_open:
             self._serial.reset_input_buffer()
             self._serial.reset_output_buffer()
-        self._send_command("km.init()")
+        result = self._send_command("km.version()")
+        if result:
+            lines = [line for line in result.splitlines() if line != "km.version()"]
+            if lines:
+                self._firmware_version = lines[-1]
 
     def wait(self, seconds: float) -> None:
         time.sleep(seconds)
@@ -132,76 +160,74 @@ class MakcuController:
     def handshake(self) -> bool:
         try:
             self._validate_connection()
-            self._send_command("km.init()")
+            result = self._send_command("km.version()")
+            if result:
+                lines = [line for line in result.splitlines() if line != "km.version()"]
+                if lines:
+                    self._firmware_version = lines[-1]
             return True
         except Exception as exc:
             logger.warning("[MAKCU] Handshake failed: %s", exc)
             return False
 
     def _move(self, x: int, y: int) -> None:
-        self._send_command(f"km.move({x}, {y})")
+        self._send_command(f"km.move({int(x)},{int(y)})")
 
     def move_absolute(self, x: int, y: int) -> None:
-        if not WIN32_AVAILABLE or win32api is None:
-            raise RuntimeError("win32api not available, cannot get current cursor position")
+        self._validate_connection()
+        if not WIN32_AVAILABLE:
+            raise MakcuConnectionError("Absolute cursor movement requires win32api on Windows")
+        try:
+            win32api.SetCursorPos((int(x), int(y)))
+        except Exception as exc:
+            logger.warning("[Hardware] MAKCU absolute move fallback: %s", exc)
 
-        current_x, current_y = win32api.GetCursorPos()
-        self._move(x - current_x, y - current_y)
+    def _click_button(self, button: int) -> None:
+        self._validate_connection()
+        press_command = BUTTON_PRESS_COMMANDS.get(button)
+        release_command = BUTTON_RELEASE_COMMANDS.get(button)
+        if press_command is None or release_command is None:
+            raise ValueError(f"unsupported mouse button: {button}")
+        self._send_command(press_command)
+        self._send_command(release_command)
+        time.sleep(CLICK_POST_DELAY_S)
 
     def click(self, x: int, y: int) -> None:
-        self._validate_connection()
-        self._move(x, y)
-        self._send_command(f"km.click({BUTTON_LEFT})")
-        time.sleep(CLICK_POST_DELAY_S)
+        self.move_absolute(x, y)
+        self.click_current()
 
     def click_current(self) -> None:
-        self._validate_connection()
-        self._send_command(f"km.click({BUTTON_LEFT})")
-        time.sleep(CLICK_POST_DELAY_S)
+        self._click_button(BUTTON_LEFT)
 
     def move_and_click(self, x: int, y: int) -> None:
-        if not WIN32_AVAILABLE or win32api is None:
-            raise RuntimeError("win32api not available")
-
-        self._validate_connection()
-        current_x, current_y = win32api.GetCursorPos()
-        dx = x - current_x
-        dy = y - current_y
-
-        self._serial.reset_input_buffer()
-        self._serial.write(f"km.move({dx}, {dy})\r\n".encode("utf-8"))
-        time.sleep(0.005)
-        self._send_command(f"km.click({BUTTON_LEFT})")
-        time.sleep(CLICK_POST_DELAY_S)
+        self.move_absolute(x, y)
+        self.click_current()
 
     def click_right(self, x: int, y: int) -> None:
-        self._validate_connection()
-        self._move(x, y)
-        self._send_command(f"km.click({BUTTON_RIGHT})")
-        time.sleep(CLICK_POST_DELAY_S)
+        self.move_absolute(x, y)
+        self._click_button(BUTTON_RIGHT)
 
     def scroll(self, direction: str, ticks: int) -> None:
         self._validate_connection()
-        direction = direction.lower()
-        if direction not in ("up", "down"):
+        normalized = direction.lower()
+        if normalized not in ("up", "down"):
             raise ValueError(f"scroll direction must be 'up' or 'down', got: {direction}")
-
-        amount = 1 if direction == "up" else -1
+        delta = 1 if normalized == "up" else -1
         for _ in range(ticks):
-            self._send_command(f"km.wheel({amount})")
+            self._send_command(f"km.wheel({delta})")
             time.sleep(0.005)
 
     def press(self, key_name: str) -> None:
         self._validate_connection()
-        self._send_command(f"km.press('{key_name.lower()}')")
+        self._send_command(f"km.press('{str(key_name).lower()}')")
 
     def key_down(self, key_name: str) -> None:
         self._validate_connection()
-        self._send_command(f"km.down('{key_name.lower()}')")
+        self._send_command(f"km.down('{str(key_name).lower()}')")
 
     def key_up(self, key_name: str) -> None:
         self._validate_connection()
-        self._send_command(f"km.up('{key_name.lower()}')")
+        self._send_command(f"km.up('{str(key_name).lower()}')")
 
     def close(self) -> None:
         self._disconnect()

@@ -13,3 +13,8 @@ Set-Location $root
     --noconfirm `
     --clean `
     FerrumBotLauncher.spec
+
+& $PythonExe tools/release_packaging.py `
+    --project-root $root `
+    --dist-dir dist/FerrumBot `
+    --output-root release

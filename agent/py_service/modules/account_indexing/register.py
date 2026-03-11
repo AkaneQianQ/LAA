@@ -146,6 +146,18 @@ def _scroll_steps_between_character_defaults(
     return _page_for_character_index(int(target_character_index)) - _page_for_character_index(int(current_character_index))
 
 
+def _choose_target_ui_slot(
+    verified_ui_slot: Optional[int],
+    target_ui_slot: int,
+    allow_unverified_target_click: bool,
+) -> Optional[int]:
+    if verified_ui_slot is not None:
+        return int(verified_ui_slot)
+    if allow_unverified_target_click:
+        return int(target_ui_slot)
+    return None
+
+
 def _compute_stable_account_hash(tag_image: np.ndarray) -> str:
     """
     Compute a stable account hash resilient to minor rendering jitter.
@@ -1236,12 +1248,16 @@ def first_page_incomplete_recognition(context: dict) -> RecognitionResult:
         return RecognitionResult(matched=False, payload={"occupied_slots": [], "empty_slots": []})
 
     slot_results, occupancy_mode, occupied_threshold = _scan_slot_occupancy(screenshot, param)
+    skip_first_slot = bool(param.get("skip_first_slot", False))
     occupied_slots = [
         int(slot_index)
         for slot_index, has_character, confidence in slot_results
-        if bool(has_character) and float(confidence) >= float(occupied_threshold)
+        if (not (skip_first_slot and int(slot_index) == 0))
+        and bool(has_character)
+        and float(confidence) >= float(occupied_threshold)
     ]
-    empty_slots = [idx for idx in range(len(ALL_SLOT_ROIS)) if idx not in occupied_slots]
+    ignored_slots = {0} if skip_first_slot else set()
+    empty_slots = [idx for idx in range(len(ALL_SLOT_ROIS)) if idx not in occupied_slots and idx not in ignored_slots]
     matched = len(empty_slots) > 0
 
     return RecognitionResult(
@@ -1586,18 +1602,18 @@ def process_remaining_donations(context: dict):
     vision = context.get("vision_engine")
     if not isinstance(variables, dict) or hardware is None or vision is None:
         print("[ERROR] ProcessRemainingDonations missing runtime context")
-        return
+        return False
 
     account_id = int(variables.get("account_id") or 0)
     db_path = str(variables.get("db_path", param.get("db_path", DEFAULT_DB_PATH)))
     if account_id <= 0:
         print("[ERROR] ProcessRemainingDonations missing account_id")
-        return
+        return False
 
     character_images = _load_existing_character_images(db_path, account_id)
     if not character_images:
         print("[ERROR] ProcessRemainingDonations no indexed characters for account")
-        return
+        return False
 
     switch_template = str(param.get("switch_template", SWITCH_TEMPLATE))
     switch_roi = tuple(param.get("switch_roi", DEFAULT_SWITCH_ROI))
@@ -1635,6 +1651,7 @@ def process_remaining_donations(context: dict):
     mad_threshold = float(param.get("dedupe_mad_threshold", 4.0))
     shape_distance_threshold = float(param.get("dedupe_shape_distance_threshold", 6.0))
     dedupe_max_shift = int(param.get("dedupe_max_shift", 3))
+    allow_unverified_target_click = bool(param.get("allow_unverified_target_click", False))
 
     from ...modules.workflow_executor.executor import execute_pipeline
 
@@ -1828,7 +1845,7 @@ def process_remaining_donations(context: dict):
         if next_target_index is None:
             _log(f"[OK] completed, processed={processed_count}, no pending characters remain")
             variables["current_character_slot_index"] = int(current_character_index)
-            return
+            return True
 
         default_page = _page_for_character_index(current_character_index)
         target_page = _page_for_character_index(next_target_index)
@@ -1838,25 +1855,25 @@ def process_remaining_donations(context: dict):
                 f"[ERROR] invalid target ui slot for slot_index={int(next_target_index)} "
                 f"page={int(target_page)} ui_slot={int(target_ui_slot)}"
             )
-            return
+            return False
         scroll_steps = _scroll_steps_between_character_defaults(current_character_index, next_target_index)
         if scroll_steps < 0:
             _log(
                 f"[ERROR] backward navigation required current={int(current_character_index)} "
                 f"target={int(next_target_index)}; please re-index account ordering"
             )
-            return
+            return False
 
         panel_ready = False
         for panel_try in range(max(1, switch_check_retry_rounds)):
             _log(f"panel_try={panel_try+1}/{max(1, switch_check_retry_rounds)}")
             if not open_switch_panel_with_two_esc():
                 _log("[ERROR] cannot open character switch panel with ESC retries")
-                return
+                return False
 
             pre_click_delay_ms = first_panel_pre_click_settle_ms if panel_try == 0 else 0
             if not poll_and_click_switch_button(pre_click_delay_ms=pre_click_delay_ms):
-                return
+                return False
 
             if wait_switch_check():
                 panel_ready = True
@@ -1865,7 +1882,7 @@ def process_remaining_donations(context: dict):
 
         if not panel_ready:
             _log("[ERROR] selection panel did not appear after switch button click")
-            return
+            return False
 
         _log(f"move mouse to safe position ({safe_x}, {safe_y})")
         hardware.move_absolute(safe_x, safe_y)
@@ -1883,12 +1900,12 @@ def process_remaining_donations(context: dict):
         screenshot = vision.get_screenshot(force_fresh=True)
         if screenshot is None or screenshot.size == 0:
             _log("[ERROR] failed to capture screenshot after opening selection panel")
-            return
+            return False
 
         target_image = character_images.get(int(next_target_index))
         if target_image is None or target_image.size == 0:
             _log(f"[ERROR] missing indexed screenshot for slot_index={int(next_target_index)}")
-            return
+            return False
 
         chosen_ui_slot = verify_target_slot(
             screenshot=screenshot,
@@ -1906,12 +1923,24 @@ def process_remaining_donations(context: dict):
                 target_image=target_image,
             )
 
-        if chosen_ui_slot is not None:
-            x1, y1, x2, y2 = ALL_SLOT_ROIS[int(chosen_ui_slot)]
+        selected_ui_slot = _choose_target_ui_slot(
+            verified_ui_slot=chosen_ui_slot,
+            target_ui_slot=int(target_ui_slot),
+            allow_unverified_target_click=allow_unverified_target_click,
+        )
+
+        if chosen_ui_slot is None and selected_ui_slot is not None:
+            _log(
+                f"[WARN] target verify failed for slot_index={int(next_target_index)} on "
+                f"target_page={int(target_page)}; continue with expected_ui={int(selected_ui_slot)}"
+            )
+
+        if selected_ui_slot is not None:
+            x1, y1, x2, y2 = ALL_SLOT_ROIS[int(selected_ui_slot)]
             roi = (x1, y1, x2, y2)
             bx, by = _click_roi_center(hardware, roi, jitter=2)
             _log(
-                f"slot ui={int(chosen_ui_slot)} selected slot_index={int(next_target_index)} "
+                f"slot ui={int(selected_ui_slot)} selected slot_index={int(next_target_index)} "
                 f"target_page={int(target_page)} -> click ({bx}, {by}) roi={roi}"
             )
             if slot_click_settle_ms > 0:
@@ -1945,7 +1974,7 @@ def process_remaining_donations(context: dict):
                     f"[ERROR] login button not found for slot_index={int(next_target_index)}, "
                     f"score={login_score:.4f}"
                 )
-                return
+                return False
             _click_box_shrink(
                 hardware,
                 login_box,
@@ -1973,7 +2002,7 @@ def process_remaining_donations(context: dict):
 
             if not wait_world_color_ready():
                 _log(f"[ERROR] world-load color not detected for slot_index={int(next_target_index)}")
-                return
+                return False
 
             success = execute_pipeline(
                 pipeline_path=Path("assets/resource/pipeline/guild_donation.json"),
@@ -1984,7 +2013,7 @@ def process_remaining_donations(context: dict):
             )
             if not success:
                 _log(f"[ERROR] guild donation failed for slot_index={int(next_target_index)}")
-                return
+                return False
 
             mark_account_character_done(db_path=db_path, account_id=account_id, slot_index=int(next_target_index))
             session_run_done.add(int(next_target_index))
@@ -1999,9 +2028,10 @@ def process_remaining_donations(context: dict):
             f"[ERROR] unable to verify slot_index={int(next_target_index)} on target_page={int(target_page)}; "
             f"possible ordering drift, please rebuild account index"
         )
-        return
+        return False
 
     _log(f"[ERROR] reached max loops={max_switch_loops}, processed={processed_count}")
+    return False
 
 
 def register():
