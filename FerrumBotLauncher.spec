@@ -14,6 +14,7 @@ gui_qt_datas = [(str(project_root / "gui_qt" / "theme" / "assets"), "gui_qt/them
 hiddenimports = (
     collect_submodules("agent.py_service.modules")
     + collect_submodules("ttkbootstrap")
+    + collect_submodules("requests")
 )
 
 
