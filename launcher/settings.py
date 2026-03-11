@@ -8,7 +8,7 @@ import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from launcher.update_service import DEFAULT_UPDATE_REPO, ProxyConfig
+from launcher.update_service import DEFAULT_UPDATE_REPO, LEGACY_UPDATE_REPOS, ProxyConfig
 
 
 DEFAULT_DRIVER_BACKEND = "ferrum"
@@ -67,6 +67,8 @@ class LauncherSettingsStore:
         task_order_raw = payload.get("task_order", [])
         keyboard_via_python = bool(payload.get("keyboard_via_python", False))
         update_repo = str(payload.get("update_repo", DEFAULT_UPDATE_REPO)).strip() or DEFAULT_UPDATE_REPO
+        if update_repo in LEGACY_UPDATE_REPOS:
+            update_repo = DEFAULT_UPDATE_REPO
         update_proxy_raw = payload.get("update_proxy", {})
         task_checked = {
             str(name): bool(value)

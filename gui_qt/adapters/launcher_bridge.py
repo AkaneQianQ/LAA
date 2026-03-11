@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import threading
 import time
+import os
+import shutil
 from pathlib import Path
 
 from PySide6.QtCore import QCoreApplication, QObject, Signal
@@ -26,7 +28,56 @@ from launcher.update_service import GitHubUpdateService, ProxyConfig, download_a
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_SETTINGS_PATH = PROJECT_ROOT / "data" / "ui_settings.json"
+LEGACY_SETTINGS_PATH = PROJECT_ROOT / "data" / "ui_settings.json"
+
+
+def _default_settings_root() -> Path:
+    custom = str(os.environ.get("LAA_SETTINGS_DIR", "")).strip()
+    if custom:
+        return Path(custom).expanduser()
+
+    if os.name == "nt":
+        local_appdata = str(os.environ.get("LOCALAPPDATA", "")).strip()
+        if local_appdata:
+            return Path(local_appdata) / "LAA"
+
+    xdg_state_home = str(os.environ.get("XDG_STATE_HOME", "")).strip()
+    if xdg_state_home:
+        return Path(xdg_state_home) / "LAA"
+
+    return PROJECT_ROOT / "data"
+
+
+def default_settings_path() -> Path:
+    return _default_settings_root() / "ui_settings.json"
+
+
+def _latest_archived_settings_path() -> Path | None:
+    cleanup_root = PROJECT_ROOT / "archive" / "cleanup"
+    if not cleanup_root.exists():
+        return None
+    candidates = sorted(cleanup_root.glob("*/runtime/data/ui_settings.json"))
+    if not candidates:
+        return None
+    try:
+        return max(candidates, key=lambda path: path.stat().st_mtime)
+    except OSError:
+        return candidates[-1]
+
+
+def ensure_settings_migrated(settings_path: Path) -> Path:
+    target = Path(settings_path)
+    if target.exists():
+        return target
+
+    migration_candidates = [LEGACY_SETTINGS_PATH, _latest_archived_settings_path()]
+    for candidate in migration_candidates:
+        if candidate is None or not candidate.exists():
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(candidate, target)
+        return target
+    return target
 
 
 class LauncherBridge(QObject):
@@ -42,7 +93,8 @@ class LauncherBridge(QObject):
 
     def __init__(self, settings_path: Path | None = None, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        self._settings_store = LauncherSettingsStore(settings_path or DEFAULT_SETTINGS_PATH)
+        resolved_settings_path = ensure_settings_migrated(Path(settings_path) if settings_path is not None else default_settings_path())
+        self._settings_store = LauncherSettingsStore(resolved_settings_path)
         self._task_thread: threading.Thread | None = None
         self._trigger_thread: threading.Thread | None = None
         self._busy_lock = threading.Lock()

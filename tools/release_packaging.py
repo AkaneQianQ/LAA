@@ -9,10 +9,15 @@ import ast
 import hashlib
 import json
 import shutil
+import sys
 import zipfile
 from pathlib import Path
 
-from launcher.update_service import SHA256SUMS_NAME, expected_release_asset_name
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from launcher.update_service import RELEASE_PRODUCT_NAME, SHA256SUMS_NAME, expected_release_asset_name
 
 
 def read_project_version(project_root: str | Path) -> str:
@@ -41,7 +46,7 @@ def _read_package_version(init_path: Path) -> str:
 
 def build_release_names(version_tag: str) -> dict[str, str]:
     return {
-        "release_dir": f"FerrumBot-{version_tag}-portable",
+        "release_dir": f"{RELEASE_PRODUCT_NAME}-{version_tag}-portable",
         "portable_zip": expected_release_asset_name(version_tag),
         "sha256sums": SHA256SUMS_NAME,
     }

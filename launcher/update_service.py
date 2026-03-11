@@ -13,9 +13,11 @@ from pathlib import Path
 from urllib.parse import quote
 
 
-DEFAULT_UPDATE_REPO = "AkaneGod/FerrumBot"
+DEFAULT_UPDATE_REPO = "AkaneQianQ/LAA"
+LEGACY_UPDATE_REPOS = {"AkaneGod/FerrumBot"}
 GITHUB_API_BASE = "https://api.github.com"
-PORTABLE_ASSET_TEMPLATE = "FerrumBot-{tag_name}-portable.zip"
+RELEASE_PRODUCT_NAME = "LAA"
+PORTABLE_ASSET_TEMPLATE = RELEASE_PRODUCT_NAME + "-{tag_name}-portable.zip"
 SHA256SUMS_NAME = "SHA256SUMS.txt"
 
 
@@ -202,11 +204,15 @@ def select_release_asset(release_info: dict) -> ReleaseAsset:
         return exact_matches[0]
     if len(exact_matches) > 1:
         raise ValueError("ambiguous exact portable assets in release")
-    preferred = [asset for asset in assets if asset.name.lower().endswith(".zip") and "ferrumbot" in asset.name.lower()]
+    preferred = [
+        asset
+        for asset in assets
+        if asset.name.lower().endswith(".zip") and RELEASE_PRODUCT_NAME.lower() in asset.name.lower()
+    ]
     if len(preferred) == 1:
         return preferred[0]
     if len(preferred) > 1:
-        raise ValueError("ambiguous FerrumBot zip assets in release")
+        raise ValueError(f"ambiguous {RELEASE_PRODUCT_NAME} zip assets in release")
     zip_assets = [asset for asset in assets if asset.name.lower().endswith(".zip")]
     if zip_assets:
         if len(zip_assets) > 1:
@@ -248,7 +254,7 @@ def download_and_apply_release(
         session=session,
     )
     asset = select_release_asset(release_info)
-    download_dir = Path(tempfile.mkdtemp(prefix="ferrumbot-update-"))
+    download_dir = Path(tempfile.mkdtemp(prefix=f"{RELEASE_PRODUCT_NAME.lower()}-update-"))
     download_path = service.download_release_asset(asset, download_dir)
     if not asset.sha256:
         raise ValueError("release asset is missing sha256 verification data")
@@ -317,7 +323,7 @@ def write_windows_updater_script(target_dir: str | Path) -> Path:
                 "if ($ProcessIdToWait -gt 0) {",
                 "    Wait-Process -Id $ProcessIdToWait -ErrorAction SilentlyContinue",
                 "}",
-                '$stageDir = Join-Path ([System.IO.Path]::GetTempPath()) ("FerrumBot-apply-" + [guid]::NewGuid().ToString())',
+                f'$stageDir = Join-Path ([System.IO.Path]::GetTempPath()) ("{RELEASE_PRODUCT_NAME}-apply-" + [guid]::NewGuid().ToString())',
                 "New-Item -ItemType Directory -Force -Path $stageDir | Out-Null",
                 "Expand-Archive -LiteralPath $ZipPath -DestinationPath $stageDir -Force",
                 "$items = Get-ChildItem -LiteralPath $stageDir",
