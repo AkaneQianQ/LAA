@@ -6,10 +6,17 @@ dist/
 dist_refresh/
 release/
 archive/cleanup/
+archive/
 
 data/ui_settings.json
 
 logs/debug/
 logs/*.log
 
+.claude/
+CLAUDE.md
+docs/plans/
 .claude/settings.local.json
+tests/
+AGENTS.md
+tools/repo_cleanup.py
