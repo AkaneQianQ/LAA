@@ -98,7 +98,7 @@ def main() -> int:
     parser.add_argument("--project-root", default=".", help="Project root path")
     parser.add_argument("--dist-dir", default="dist/FerrumBot", help="PyInstaller dist directory")
     parser.add_argument("--output-root", default="release", help="Release output directory")
-    parser.add_argument("--version-tag", default="", help="Release version tag, e.g. v1.0.03")
+    parser.add_argument("--version-tag", default="", help="Release version tag, e.g. v1.0.04")
     args = parser.parse_args()
 
     project_root = Path(args.project_root).resolve()
