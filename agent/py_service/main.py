@@ -40,7 +40,7 @@ except ImportError as e:
     raise
 
 # 版本信息
-VERSION = "1.0.04"
+VERSION = "1.0.05"
 
 
 class ServiceError(Exception):

@@ -1,0 +1,54 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+          cache-dependency-path: "requirements-gui.txt"
+
+      - name: Install GUI build dependencies
+        run: python -m pip install -r requirements-gui.txt
+
+      - name: Build portable package
+        shell: pwsh
+        run: .\build_launcher.ps1 -PythonExe python
+
+      - name: Validate release assets
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $zipPath = "release/LAA-$tag-portable.zip"
+          $shaPath = "release/SHA256SUMS.txt"
+          if (-not (Test-Path $zipPath)) {
+            throw "Missing release asset: $zipPath"
+          }
+          if (-not (Test-Path $shaPath)) {
+            throw "Missing release asset: $shaPath"
+          }
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            release/LAA-${{ github.ref_name }}-portable.zip
+            release/SHA256SUMS.txt
