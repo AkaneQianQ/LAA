@@ -7,37 +7,74 @@ MakcuController - Legacy API serial communication layer for MAKCU hardware.
 import logging
 import time
 from dataclasses import dataclass
-from typing import Optional
+from typing import List, Optional
 
 import serial
-
-try:
-    import win32api
-
-    WIN32_AVAILABLE = True
-except ImportError:
-    WIN32_AVAILABLE = False
-    win32api = None
 
 
 logger = logging.getLogger(__name__)
 
-BUTTON_LEFT = 0
-BUTTON_RIGHT = 1
-BUTTON_MIDDLE = 2
+BUTTON_LEFT = 1
+BUTTON_RIGHT = 2
+BUTTON_MIDDLE = 3
 CLICK_POST_DELAY_S = 0.1
+CLICK_DELAY_MS = 50
+KEY_DOWN_DELAY_S = 0.012
+KEY_HOLD_MS = 50
+KEY_UP_DELAY_S = 0.008
 
-BUTTON_PRESS_COMMANDS = {
-    BUTTON_LEFT: "km.left(1)",
-    BUTTON_RIGHT: "km.right(1)",
-    BUTTON_MIDDLE: "km.middle(1)",
+MAKCU_KEY_ALIASES = {
+    "return": "enter",
+    "escape": "esc",
+    "back": "backspace",
+    "bs": "backspace",
+    "spacebar": "space",
+    "dash": "minus",
+    "hyphen": "minus",
+    "equal": "equals",
+    "lbracket": "leftbracket",
+    "openbracket": "leftbracket",
+    "rbracket": "rightbracket",
+    "closebracket": "rightbracket",
+    "bslash": "backslash",
+    "semi": "semicolon",
+    "apostrophe": "quote",
+    "singlequote": "quote",
+    "backtick": "grave",
+    "tilde": "grave",
+    "dot": "period",
+    "forwardslash": "slash",
+    "fslash": "slash",
+    "caps": "capslock",
+    "prtsc": "printscreen",
+    "print": "printscreen",
+    "scroll": "scrolllock",
+    "break": "pause",
+    "ins": "insert",
+    "pgup": "pageup",
+    "del": "delete",
+    "pgdown": "pagedown",
+    "pgdn": "pagedown",
+    "arrowup": "up",
+    "arrowdown": "down",
+    "arrowleft": "left",
+    "arrowright": "right",
+    "control": "ctrl",
+    "leftctrl": "ctrl",
+    "lctrl": "ctrl",
+    "leftshift": "shift",
+    "lshift": "shift",
+    "leftalt": "alt",
+    "lalt": "alt",
+    "rightctrl": "rctrl",
+    "rctrl": "rctrl",
+    "rightshift": "rshift",
+    "rshift": "rshift",
+    "rightalt": "ralt",
+    "ralt": "ralt",
 }
 
-BUTTON_RELEASE_COMMANDS = {
-    BUTTON_LEFT: "km.left(0)",
-    BUTTON_RIGHT: "km.right(0)",
-    BUTTON_MIDDLE: "km.middle(0)",
-}
+MAKCU_MODIFIER_KEYS = {"ctrl", "shift", "alt", "gui", "rctrl", "rshift", "ralt", "rgui"}
 
 
 @dataclass
@@ -175,33 +212,25 @@ class MakcuController:
 
     def move_absolute(self, x: int, y: int) -> None:
         self._validate_connection()
-        if not WIN32_AVAILABLE:
-            raise MakcuConnectionError("Absolute cursor movement requires win32api on Windows")
-        try:
-            win32api.SetCursorPos((int(x), int(y)))
-        except Exception as exc:
-            logger.warning("[Hardware] MAKCU absolute move fallback: %s", exc)
+        self._send_command(f"km.moveto({int(x)},{int(y)})")
 
     def _click_button(self, button: int) -> None:
         self._validate_connection()
-        press_command = BUTTON_PRESS_COMMANDS.get(button)
-        release_command = BUTTON_RELEASE_COMMANDS.get(button)
-        if press_command is None or release_command is None:
+        if button not in {BUTTON_LEFT, BUTTON_RIGHT, BUTTON_MIDDLE}:
             raise ValueError(f"unsupported mouse button: {button}")
-        self._send_command(press_command)
-        self._send_command(release_command)
+        self._send_command(f"km.click({int(button)},1,{CLICK_DELAY_MS})")
         time.sleep(CLICK_POST_DELAY_S)
 
     def click(self, x: int, y: int) -> None:
-        self.move_absolute(x, y)
-        self.click_current()
+        self.move_and_click(x, y)
 
     def click_current(self) -> None:
         self._click_button(BUTTON_LEFT)
 
     def move_and_click(self, x: int, y: int) -> None:
-        self.move_absolute(x, y)
-        self.click_current()
+        self._validate_connection()
+        self._send_command(f"km.silent({int(x)},{int(y)})")
+        time.sleep(CLICK_POST_DELAY_S)
 
     def click_right(self, x: int, y: int) -> None:
         self.move_absolute(x, y)
@@ -217,17 +246,55 @@ class MakcuController:
             self._send_command(f"km.wheel({delta})")
             time.sleep(0.005)
 
+    def _normalize_key_part(self, key_name: str) -> str:
+        token = str(key_name).strip()
+        if len(token) == 1:
+            return token
+        lowered = token.lower()
+        return MAKCU_KEY_ALIASES.get(lowered, lowered)
+
+    def _parse_key_parts(self, key_name: str) -> List[str]:
+        parts = str(key_name).split("+")
+        normalized = [self._normalize_key_part(part) for part in parts if str(part).strip()]
+        if not normalized:
+            raise ValueError("empty key name")
+        return normalized
+
+    def _order_key_parts(self, parts: List[str]) -> List[str]:
+        modifiers = [part for part in parts if part.lower() in MAKCU_MODIFIER_KEYS]
+        main_keys = [part for part in parts if part.lower() not in MAKCU_MODIFIER_KEYS]
+        return modifiers + main_keys
+
     def press(self, key_name: str) -> None:
         self._validate_connection()
-        self._send_command(f"km.press('{str(key_name).lower()}')")
+        parts = self._order_key_parts(self._parse_key_parts(key_name))
+        if len(parts) == 1:
+            key = parts[0]
+            quote = '"' if '"' not in key else "'"
+            self._send_command(f"km.press({quote}{key}{quote},{KEY_HOLD_MS},0)")
+            return
+
+        for key in parts:
+            quote = '"' if '"' not in key else "'"
+            self._send_command(f"km.down({quote}{key}{quote})")
+            time.sleep(KEY_DOWN_DELAY_S)
+        time.sleep(KEY_HOLD_MS / 1000.0)
+        for key in reversed(parts):
+            quote = '"' if '"' not in key else "'"
+            self._send_command(f"km.up({quote}{key}{quote})")
+            time.sleep(KEY_UP_DELAY_S)
 
     def key_down(self, key_name: str) -> None:
         self._validate_connection()
-        self._send_command(f"km.down('{str(key_name).lower()}')")
+        for key in self._order_key_parts(self._parse_key_parts(key_name)):
+            quote = '"' if '"' not in key else "'"
+            self._send_command(f"km.down({quote}{key}{quote})")
 
     def key_up(self, key_name: str) -> None:
         self._validate_connection()
-        self._send_command(f"km.up('{str(key_name).lower()}')")
+        for key in reversed(self._order_key_parts(self._parse_key_parts(key_name))):
+            quote = '"' if '"' not in key else "'"
+            self._send_command(f"km.up({quote}{key}{quote})")
 
     def close(self) -> None:
         self._disconnect()

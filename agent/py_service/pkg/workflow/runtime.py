@@ -162,7 +162,7 @@ class ActionDispatcher:
             # Fallback: move then click separately
             print(f"[5D Debug] 回退到 move_absolute + click")
             self.controller.move_absolute(abs_x, abs_y)
-            self.controller._send_command("km.click(0)")  # 0 = left button
+            self.controller.click_current()
             time.sleep(0.1)
 
     def _dispatch_wait(self, action: WaitAction) -> None:
@@ -398,6 +398,7 @@ class ActionDispatcher:
                 center_y = match_y + h // 2
                 final_x, final_y = center_x, center_y
             else:
+                w, h = 0, 0
                 # 如果无法读取模板，使用传入的ROI中心
                 x1, y1, x2, y2 = action.roi
                 final_x = (x1 + x2) // 2
@@ -415,7 +416,7 @@ class ActionDispatcher:
                 # 回退到旧方法
                 print(f"[5C Debug] 回退到 move_absolute + click")
                 self.controller.move_absolute(final_x, final_y)
-                self.controller._send_command("km.click(0)")  # 0 = 左键
+                self.controller.click_current()
                 time.sleep(0.1)
 
         except Exception as e:
