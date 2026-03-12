@@ -8,9 +8,10 @@ import ctypes
 import ctypes.wintypes
 import os
 import sys
+import threading
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QPoint, Property, QEasingCurve, QPropertyAnimation, QRect, Qt
+from PySide6.QtCore import QEvent, QPoint, Property, QEasingCurve, QPropertyAnimation, QRect, Qt, Signal
 from PySide6.QtGui import QColor, QCursor, QEnterEvent, QMouseEvent, QPaintEvent, QPainter
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -234,6 +235,9 @@ class TaskListContainer(QWidget):
 class FerrumMainWindow(QMainWindow):
     """Minimal main window shell for the Qt launcher."""
 
+    update_download_succeeded = Signal(dict)
+    update_download_failed = Signal(str)
+
     WM_NCHITTEST = 0x0084
     HTLEFT = 10
     HTRIGHT = 11
@@ -256,6 +260,7 @@ class FerrumMainWindow(QMainWindow):
         self.update_proxy = getattr(self.settings, "update_proxy", ProxyConfig())
         self.current_backend = self.settings.driver_backend
         self.latest_update_result: dict | None = None
+        self._update_download_thread: threading.Thread | None = None
         self.task_items = [dict(item, visible=True) for item in TASK_ITEMS]
         self._restore_task_queue_state()
         self.task_checkboxes: dict[str, QCheckBox] = {}
@@ -270,6 +275,8 @@ class FerrumMainWindow(QMainWindow):
         self.active_config_task_name: str | None = None
         self._update_download_in_progress = False
         self._update_progress_animation: QPropertyAnimation | None = None
+        self.update_download_succeeded.connect(self._on_update_download_succeeded)
+        self.update_download_failed.connect(self._on_update_download_failed)
         self._f10_hotkey_handle = None
         self.setWindowTitle("FerrumBot")
         self.setWindowFlag(Qt.FramelessWindowHint, True)
@@ -1123,26 +1130,23 @@ class FerrumMainWindow(QMainWindow):
         self._set_update_progress_value(0, 100, "0%")
         self.update_status_label.setText("正在下载更新包...")
         self.download_update_button.setEnabled(False)
-        try:
-            install_dir, restart_executable, restart_args = self._build_update_restart_context()
-            self.bridge.download_and_apply_update(
-                self.latest_update_result,
-                install_dir=install_dir,
-                restart_executable=restart_executable,
-                restart_args=restart_args,
-            )
-        except Exception as exc:
-            self._update_download_in_progress = False
-            self.update_status_label.setText(f"下载失败: {exc}")
-            self._append_log(f"[Launcher] update download failed: {exc}")
-            self._reset_update_progress()
-            return
-        self._update_download_in_progress = False
-        self._set_update_progress_value(100, 100, "100%")
-        self.update_status_label.setText("更新包已下载，程序即将退出并应用更新。")
-        app = QApplication.instance()
-        if app is not None:
-            app.quit()
+        install_dir, restart_executable, restart_args = self._build_update_restart_context()
+
+        def worker() -> None:
+            try:
+                result = self.bridge.download_and_apply_update(
+                    self.latest_update_result,
+                    install_dir=install_dir,
+                    restart_executable=restart_executable,
+                    restart_args=restart_args,
+                )
+            except Exception as exc:
+                self.update_download_failed.emit(str(exc))
+                return
+            self.update_download_succeeded.emit(dict(result or {}))
+
+        self._update_download_thread = threading.Thread(target=worker, name="qt-update-download", daemon=True)
+        self._update_download_thread.start()
 
     def _show_update_progress(self) -> None:
         if hasattr(self, "update_progress_bar"):
@@ -1190,6 +1194,23 @@ class FerrumMainWindow(QMainWindow):
         self.update_progress_bar.setRange(0, 0)
         self.update_progress_bar.setFormat("下载中...")
         self.update_status_label.setText("正在下载更新包...")
+
+    def _on_update_download_succeeded(self, result: dict) -> None:
+        self._update_download_in_progress = False
+        self._set_update_progress_value(100, 100, "100%")
+        self.update_status_label.setText("更新包已下载，程序即将退出并应用更新。")
+        log_path = str(result.get("log_path", "")).strip()
+        if log_path:
+            self._append_log(f"[Launcher] update installer log: {log_path}")
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
+
+    def _on_update_download_failed(self, message: str) -> None:
+        self._update_download_in_progress = False
+        self.update_status_label.setText(f"下载失败: {message}")
+        self._append_log(f"[Launcher] update download failed: {message}")
+        self._reset_update_progress()
 
     def _build_update_restart_context(self) -> tuple[str, str, list[str]]:
         if getattr(sys, "frozen", False):

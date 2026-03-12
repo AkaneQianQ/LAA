@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import subprocess
 import tempfile
@@ -332,16 +333,20 @@ def download_and_apply_release(
         raise ValueError("release asset is missing sha256 verification data")
     verify_file_sha256(download_path, asset.sha256)
     script_path = write_windows_updater_script(download_dir)
+    log_path = download_dir / "apply_update.log"
     launch_windows_updater(
         script_path=script_path,
         zip_path=download_path,
         install_dir=install_dir,
         restart_executable=restart_executable,
         restart_args=restart_args or [],
+        log_path=log_path,
+        process_id=os.getpid(),
     )
     return {
         "download_path": str(download_path),
         "script_path": str(script_path),
+        "log_path": str(log_path),
         "asset_name": asset.name,
         "sha256": asset.sha256,
     }
@@ -389,27 +394,51 @@ def write_windows_updater_script(target_dir: str | Path) -> Path:
                 "    [string]$InstallDir,",
                 "    [string]$RestartFile,",
                 "    [string]$RestartArgsJson,",
+                "    [string]$LogPath,",
                 "    [int]$ProcessIdToWait = 0",
                 ")",
                 '$ErrorActionPreference = "Stop"',
-                "if ($ProcessIdToWait -gt 0) {",
-                "    Wait-Process -Id $ProcessIdToWait -ErrorAction SilentlyContinue",
+                "$transcriptStarted = $false",
+                "try {",
+                "    if ($LogPath) {",
+                "        $logDir = Split-Path -Parent $LogPath",
+                "        if ($logDir) {",
+                "            New-Item -ItemType Directory -Force -Path $logDir | Out-Null",
+                "        }",
+                "        Start-Transcript -Path $LogPath -Append | Out-Null",
+                "        $transcriptStarted = $true",
+                "    }",
+                "    if ($ProcessIdToWait -gt 0) {",
+                "        Wait-Process -Id $ProcessIdToWait -ErrorAction SilentlyContinue",
+                "    }",
+                f'    $stageDir = Join-Path ([System.IO.Path]::GetTempPath()) ("{RELEASE_PRODUCT_NAME}-apply-" + [guid]::NewGuid().ToString())',
+                "    New-Item -ItemType Directory -Force -Path $stageDir | Out-Null",
+                "    Expand-Archive -LiteralPath $ZipPath -DestinationPath $stageDir -Force",
+                "    $items = Get-ChildItem -LiteralPath $stageDir",
+                "    if ($items.Count -eq 1 -and $items[0].PSIsContainer) {",
+                "        $sourceDir = $items[0].FullName",
+                "    } else {",
+                "        $sourceDir = $stageDir",
+                "    }",
+                "    robocopy $sourceDir $InstallDir /E /R:2 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null",
+                "    if ($LASTEXITCODE -ge 8) {",
+                '        throw "robocopy failed with exit code $LASTEXITCODE"',
+                "    }",
+                "    $restartArgs = @()",
+                "    if ($RestartArgsJson) {",
+                "        $restartArgs = ConvertFrom-Json -InputObject $RestartArgsJson",
+                "    }",
+                "    Start-Process -FilePath $RestartFile -ArgumentList $restartArgs -WorkingDirectory $InstallDir",
+                "} catch {",
+                "    if ($LogPath) {",
+                '        Add-Content -LiteralPath $LogPath -Value ("[ERROR] " + $_.Exception.Message)',
+                "    }",
+                "    throw",
+                "} finally {",
+                "    if ($transcriptStarted) {",
+                "        Stop-Transcript | Out-Null",
+                "    }",
                 "}",
-                f'$stageDir = Join-Path ([System.IO.Path]::GetTempPath()) ("{RELEASE_PRODUCT_NAME}-apply-" + [guid]::NewGuid().ToString())',
-                "New-Item -ItemType Directory -Force -Path $stageDir | Out-Null",
-                "Expand-Archive -LiteralPath $ZipPath -DestinationPath $stageDir -Force",
-                "$items = Get-ChildItem -LiteralPath $stageDir",
-                "if ($items.Count -eq 1 -and $items[0].PSIsContainer) {",
-                "    $sourceDir = $items[0].FullName",
-                "} else {",
-                "    $sourceDir = $stageDir",
-                "}",
-                "robocopy $sourceDir $InstallDir /E /R:2 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null",
-                "$restartArgs = @()",
-                "if ($RestartArgsJson) {",
-                "    $restartArgs = ConvertFrom-Json -InputObject $RestartArgsJson",
-                "}",
-                "Start-Process -FilePath $RestartFile -ArgumentList $restartArgs -WorkingDirectory $InstallDir",
             ]
         ),
         encoding="utf-8",
@@ -423,6 +452,7 @@ def launch_windows_updater(
     install_dir: str,
     restart_executable: str,
     restart_args: list[str],
+    log_path: str | Path,
     process_id: int | None = None,
 ) -> subprocess.Popen:
     command = [
@@ -442,6 +472,8 @@ def launch_windows_updater(
         str(restart_executable),
         "-RestartArgsJson",
         json.dumps(list(restart_args), ensure_ascii=False),
+        "-LogPath",
+        str(log_path),
         "-ProcessIdToWait",
         str(int(process_id or 0)),
     ]

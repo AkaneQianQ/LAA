@@ -95,9 +95,9 @@ def test_repo_version_sources_are_aligned_to_1_0_13():
     service_main = (repo_root / "agent" / "py_service" / "main.py").read_text(encoding="utf-8")
     interface_json = json.loads((repo_root / "assets" / "interface.json").read_text(encoding="utf-8"))
 
-    assert '__version__ = "1.0.13"' in package_init
-    assert 'VERSION = "1.0.13"' in service_main
-    assert interface_json["version"] == "v1.0.13"
+    assert '__version__ = "1.0.14"' in package_init
+    assert 'VERSION = "1.0.14"' in service_main
+    assert interface_json["version"] == "v1.0.14"
 
 
 def test_pyinstaller_spec_collects_requests_for_update_service():
