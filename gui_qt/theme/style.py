@@ -160,6 +160,20 @@ def build_stylesheet() -> str:
         color: #dce5ee;
         selection-background-color: {palette.ACCENT_DIM};
     }}
+    QProgressBar#updateProgressBar {{
+        min-width: 220px;
+        max-width: 280px;
+        min-height: 30px;
+        border: 1px solid {palette.BORDER};
+        border-radius: 6px;
+        background: #11151a;
+        color: {palette.TEXT_MAIN};
+        text-align: center;
+    }}
+    QProgressBar#updateProgressBar::chunk {{
+        border-radius: 5px;
+        background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {palette.ACCENT_DIM}, stop:1 {palette.ACCENT});
+    }}
     QWidget#statusStrip QLabel {{
         font-size: 11px;
     }}

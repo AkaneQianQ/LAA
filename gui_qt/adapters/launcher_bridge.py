@@ -90,6 +90,7 @@ class LauncherBridge(QObject):
     trigger_finished = Signal()
     probe_finished = Signal(bool, str)
     account_indexing_staged = Signal(dict)
+    update_download_progress = Signal(int, int, int)
 
     def __init__(self, settings_path: Path | None = None, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -351,6 +352,7 @@ class LauncherBridge(QObject):
                 install_dir=install_dir,
                 restart_executable=restart_executable,
                 restart_args=list(restart_args or []),
+                progress_callback=self.update_download_progress.emit,
             )
         )
 
@@ -363,6 +365,7 @@ class LauncherBridge(QObject):
         install_dir: str,
         restart_executable: str,
         restart_args: list[str],
+        progress_callback=None,
     ) -> dict:
         return download_and_apply_release(
             repo=repo,
@@ -372,6 +375,7 @@ class LauncherBridge(QObject):
             install_dir=install_dir,
             restart_executable=restart_executable,
             restart_args=restart_args,
+            progress_callback=progress_callback,
         )
 
     def save_account_indexing_staging(self, session_id: str) -> dict:

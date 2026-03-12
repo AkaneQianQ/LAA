@@ -2,7 +2,7 @@
     "interface_version": 1,
     "name": "FerrumBot",
     "description": "Lost Ark 公会捐赠自动化助手 - MaaEnd 结构",
-    "version": "v1.0.11",
+    "version": "v1.0.12",
     "license": "LICENSE",
 
     "controller": [

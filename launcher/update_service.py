@@ -129,15 +129,27 @@ class GitHubUpdateService:
         payload = response.json()
         return self._build_release_info_from_api_payload(payload)
 
-    def download_release_asset(self, asset: ReleaseAsset, target_dir: str | Path) -> Path:
+    def download_release_asset(self, asset: ReleaseAsset, target_dir: str | Path, progress_callback=None) -> Path:
         target_path = Path(target_dir) / asset.name
         target_path.parent.mkdir(parents=True, exist_ok=True)
         response = self.session.get(asset.download_url, timeout=30, stream=True)
         response.raise_for_status()
+        total_bytes = 0
+        try:
+            total_bytes = int(getattr(response, "headers", {}).get("content-length", 0) or 0)
+        except (TypeError, ValueError, AttributeError):
+            total_bytes = 0
+        downloaded_bytes = 0
         with target_path.open("wb") as handle:
             for chunk in response.iter_content(chunk_size=8192):
                 if chunk:
                     handle.write(chunk)
+                    downloaded_bytes += len(chunk)
+                    if progress_callback is not None:
+                        percent = int((downloaded_bytes / total_bytes) * 100) if total_bytes > 0 else 0
+                        progress_callback(downloaded_bytes, total_bytes, min(100, percent))
+        if progress_callback is not None and total_bytes <= 0:
+            progress_callback(downloaded_bytes, 0, 0)
         return target_path
 
     @staticmethod
@@ -305,6 +317,7 @@ def download_and_apply_release(
     restart_executable: str,
     restart_args: list[str] | None = None,
     session=None,
+    progress_callback=None,
 ) -> dict:
     service = GitHubUpdateService(
         repo=repo,
@@ -314,7 +327,7 @@ def download_and_apply_release(
     )
     asset = select_release_asset(release_info)
     download_dir = Path(tempfile.mkdtemp(prefix=f"{RELEASE_PRODUCT_NAME.lower()}-update-"))
-    download_path = service.download_release_asset(asset, download_dir)
+    download_path = service.download_release_asset(asset, download_dir, progress_callback=progress_callback)
     if not asset.sha256:
         raise ValueError("release asset is missing sha256 verification data")
     verify_file_sha256(download_path, asset.sha256)

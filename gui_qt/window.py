@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QPlainTextEdit,
+    QProgressBar,
     QPushButton,
     QTabWidget,
     QVBoxLayout,
@@ -267,6 +268,8 @@ class FerrumMainWindow(QMainWindow):
         self.resize_margin = 6
         self.task_labels = {item["task_name"]: str(item["label"]) for item in self.task_items}
         self.active_config_task_name: str | None = None
+        self._update_download_in_progress = False
+        self._update_progress_animation: QPropertyAnimation | None = None
         self._f10_hotkey_handle = None
         self.setWindowTitle("FerrumBot")
         self.setWindowFlag(Qt.FramelessWindowHint, True)
@@ -671,7 +674,14 @@ class FerrumMainWindow(QMainWindow):
         self.download_update_button.clicked.connect(self._download_and_apply_update)
         update_action_row.addWidget(self.check_update_button)
         update_action_row.addWidget(self.download_update_button)
-        update_action_row.addStretch(1)
+        self.update_progress_bar = QProgressBar(update_panel)
+        self.update_progress_bar.setObjectName("updateProgressBar")
+        self.update_progress_bar.setRange(0, 100)
+        self.update_progress_bar.setValue(0)
+        self.update_progress_bar.setTextVisible(True)
+        self.update_progress_bar.setFormat("%p%")
+        self.update_progress_bar.hide()
+        update_action_row.addWidget(self.update_progress_bar, 1)
         update_layout.addLayout(update_action_row)
 
         self.update_status_label = QLabel("检查 GitHub Release 获取最新版本。", update_panel)
@@ -767,6 +777,9 @@ class FerrumMainWindow(QMainWindow):
         account_indexing_signal = getattr(self.bridge, "account_indexing_staged", None)
         if account_indexing_signal is not None:
             account_indexing_signal.connect(self._on_account_indexing_staged)
+        update_progress_signal = getattr(self.bridge, "update_download_progress", None)
+        if update_progress_signal is not None:
+            update_progress_signal.connect(self._on_update_download_progress)
 
     def _select_all_tasks(self) -> None:
         for checkbox in self.task_checkboxes.values():
@@ -1070,6 +1083,7 @@ class FerrumMainWindow(QMainWindow):
 
     def _check_for_updates(self) -> None:
         self._persist_settings()
+        self._reset_update_progress()
         try:
             result = self.bridge.check_for_updates(APP_VERSION)
         except Exception as exc:
@@ -1104,6 +1118,11 @@ class FerrumMainWindow(QMainWindow):
             self.update_status_label.setText("缺少可下载的更新包，请先检查更新。")
             self.download_update_button.setEnabled(False)
             return
+        self._update_download_in_progress = True
+        self._show_update_progress()
+        self._set_update_progress_value(0, 100, "0%")
+        self.update_status_label.setText("正在下载更新包...")
+        self.download_update_button.setEnabled(False)
         try:
             install_dir, restart_executable, restart_args = self._build_update_restart_context()
             self.bridge.download_and_apply_update(
@@ -1113,13 +1132,64 @@ class FerrumMainWindow(QMainWindow):
                 restart_args=restart_args,
             )
         except Exception as exc:
+            self._update_download_in_progress = False
             self.update_status_label.setText(f"下载失败: {exc}")
             self._append_log(f"[Launcher] update download failed: {exc}")
+            self._reset_update_progress()
             return
+        self._update_download_in_progress = False
+        self._set_update_progress_value(100, 100, "100%")
         self.update_status_label.setText("更新包已下载，程序即将退出并应用更新。")
         app = QApplication.instance()
         if app is not None:
             app.quit()
+
+    def _show_update_progress(self) -> None:
+        if hasattr(self, "update_progress_bar"):
+            self.update_progress_bar.show()
+
+    def _reset_update_progress(self) -> None:
+        if not hasattr(self, "update_progress_bar"):
+            return
+        if self._update_progress_animation is not None:
+            self._update_progress_animation.stop()
+        self.update_progress_bar.setRange(0, 100)
+        self.update_progress_bar.setValue(0)
+        self.update_progress_bar.setFormat("%p%")
+        self.update_progress_bar.hide()
+
+    def _set_update_progress_value(self, value: int, maximum: int, label: str | None = None) -> None:
+        if not hasattr(self, "update_progress_bar"):
+            return
+        maximum = max(0, int(maximum))
+        value = max(0, int(value))
+        self.update_progress_bar.setRange(0, maximum if maximum > 0 else 0)
+        if label is not None:
+            self.update_progress_bar.setFormat(label)
+        if self._update_progress_animation is None:
+            self._update_progress_animation = QPropertyAnimation(self.update_progress_bar, b"value", self)
+            self._update_progress_animation.setDuration(120)
+            self._update_progress_animation.setEasingCurve(QEasingCurve.OutCubic)
+        self._update_progress_animation.stop()
+        if value >= maximum and maximum > 0:
+            self.update_progress_bar.setValue(value)
+            return
+        self._update_progress_animation.setStartValue(self.update_progress_bar.value())
+        self._update_progress_animation.setEndValue(value)
+        self._update_progress_animation.start()
+
+    def _on_update_download_progress(self, downloaded: int, total: int, percent: int) -> None:
+        if not hasattr(self, "update_progress_bar"):
+            return
+        self._show_update_progress()
+        if int(total) > 0:
+            clamped_percent = max(0, min(100, int(percent)))
+            self._set_update_progress_value(clamped_percent, 100, f"{clamped_percent}%")
+            self.update_status_label.setText(f"正在下载更新包... {clamped_percent}%")
+            return
+        self.update_progress_bar.setRange(0, 0)
+        self.update_progress_bar.setFormat("下载中...")
+        self.update_status_label.setText("正在下载更新包...")
 
     def _build_update_restart_context(self) -> tuple[str, str, list[str]]:
         if getattr(sys, "frozen", False):

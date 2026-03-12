@@ -40,7 +40,7 @@ except ImportError as e:
     raise
 
 # 版本信息
-VERSION = "1.0.09"
+VERSION = "1.0.12"
 
 
 class ServiceError(Exception):
@@ -544,6 +544,8 @@ def run_task(
     """
     print(f"\n[任务] 开始执行: {task_name}")
 
+    components: Optional[InitializedComponents] = None
+
     # 1. 初始化组件
     try:
         components = initialize(
@@ -612,6 +614,13 @@ def run_task(
     except Exception as e:
         print(f"[错误] Pipeline 执行失败: {e}")
         return False
+    finally:
+        controller = components.hardware_controller if components is not None else None
+        if controller is not None:
+            try:
+                controller.close()
+            except Exception as exc:
+                print(f"[警告] 硬件控制器关闭失败: {exc}")
 
 
 def main():
