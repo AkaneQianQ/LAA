@@ -9,3 +9,4 @@ pyserial>=3.5,<4
 pyyaml>=6,<7
 dxcam>=0.0.5,<1
 keyboard>=0.13.5,<1
+pywin32>=308

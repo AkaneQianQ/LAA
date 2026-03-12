@@ -1,11 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 from pathlib import Path
+import sys
+import site
 
-import pywintypes
-import win32api
-import win32gui
-import win32process
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 
@@ -14,11 +12,27 @@ assets_datas = [(str(project_root / "assets"), "assets")]
 data_datas = [(str(project_root / "data"), "data")] if (project_root / "data").exists() else []
 agent_datas = collect_data_files("agent", include_py_files=True)
 gui_qt_datas = [(str(project_root / "gui_qt" / "theme" / "assets"), "gui_qt/theme/assets")]
+
+
+def _find_site_package_file(*relative_parts: str) -> Path:
+    candidates = []
+    for root in site.getsitepackages():
+        candidates.append(Path(root, *relative_parts))
+    usersite = site.getusersitepackages()
+    if usersite:
+        candidates.append(Path(usersite, *relative_parts))
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate.resolve()
+    raise FileNotFoundError(f"required bundled dependency not found: {'/'.join(relative_parts)}")
+
+
 pywin32_binaries = [
-    (str(Path(win32api.__file__).resolve()), "win32"),
-    (str(Path(win32gui.__file__).resolve()), "win32"),
-    (str(Path(win32process.__file__).resolve()), "win32"),
-    (str(Path(pywintypes.__file__).resolve()), "pywin32_system32"),
+    (str(_find_site_package_file("win32", "win32api.pyd")), "win32"),
+    (str(_find_site_package_file("win32", "win32gui.pyd")), "win32"),
+    (str(_find_site_package_file("win32", "win32process.pyd")), "win32"),
+    (str(_find_site_package_file("pywin32_system32", f"pywintypes{sys.version_info.major}{sys.version_info.minor}.dll")), "pywin32_system32"),
 ]
 
 hiddenimports = (
