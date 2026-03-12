@@ -4,6 +4,7 @@ pyinstaller>=6.0,<7
 requests[socks]>=2.32,<3
 numpy>=2,<3
 opencv-python>=4.10,<5
+pydantic>=2,<3
 pyserial>=3.5,<4
 pyyaml>=6,<7
 dxcam>=0.0.5,<1
