@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
@@ -110,31 +111,23 @@ class GitHubUpdateService:
             self.session.proxies.update(proxies)
 
     def fetch_latest_release(self) -> ReleaseInfo:
-        response = self.session.get(
-            f"{self.api_base}/repos/{self.repo}/releases/latest",
-            headers={
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-            },
-            timeout=15,
-        )
-        response.raise_for_status()
+        try:
+            response = self.session.get(
+                f"{self.api_base}/repos/{self.repo}/releases/latest",
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+                timeout=15,
+            )
+            response.raise_for_status()
+        except Exception as exc:
+            if not self._is_github_rate_limit_error(exc):
+                raise
+            return self._fetch_latest_release_from_public_page()
+
         payload = response.json()
-        tag_name = str(payload.get("tag_name", "")).strip()
-        version = normalize_version(tag_name)
-        assets = [self._parse_asset(item) for item in payload.get("assets", []) if isinstance(item, dict)]
-        assets = self._hydrate_asset_hashes(assets)
-        is_prerelease = bool(payload.get("prerelease", False))
-        return ReleaseInfo(
-            version=version,
-            tag_name=tag_name,
-            published_at=str(payload.get("published_at", "")),
-            html_url=str(payload.get("html_url", "")),
-            body=str(payload.get("body", "")),
-            assets=assets,
-            is_newer=(not is_prerelease) and is_remote_version_newer(self.current_version, version),
-            is_prerelease=is_prerelease,
-        )
+        return self._build_release_info_from_api_payload(payload)
 
     def download_release_asset(self, asset: ReleaseAsset, target_dir: str | Path) -> Path:
         target_path = Path(target_dir) / asset.name
@@ -172,6 +165,72 @@ class GitHubUpdateService:
         except Exception:
             return assets
         return parse_sha256sums_asset(assets, checksum_text)
+
+    def _build_release_info_from_api_payload(self, payload: dict) -> ReleaseInfo:
+        tag_name = str(payload.get("tag_name", "")).strip()
+        version = normalize_version(tag_name)
+        assets = [self._parse_asset(item) for item in payload.get("assets", []) if isinstance(item, dict)]
+        assets = self._hydrate_asset_hashes(assets)
+        is_prerelease = bool(payload.get("prerelease", False))
+        return ReleaseInfo(
+            version=version,
+            tag_name=tag_name,
+            published_at=str(payload.get("published_at", "")),
+            html_url=str(payload.get("html_url", "")),
+            body=str(payload.get("body", "")),
+            assets=assets,
+            is_newer=(not is_prerelease) and is_remote_version_newer(self.current_version, version),
+            is_prerelease=is_prerelease,
+        )
+
+    def _fetch_latest_release_from_public_page(self) -> ReleaseInfo:
+        response = self.session.get(
+            f"https://github.com/{self.repo}/releases/latest",
+            timeout=15,
+        )
+        response.raise_for_status()
+        html_url = str(getattr(response, "url", "") or "").strip()
+        tag_name = self._extract_tag_name_from_release_url(html_url)
+        version = normalize_version(tag_name)
+        assets = self._hydrate_asset_hashes(
+            [
+                ReleaseAsset(
+                    name=expected_release_asset_name(tag_name),
+                    download_url=f"https://github.com/{self.repo}/releases/download/{tag_name}/{expected_release_asset_name(tag_name)}",
+                ),
+                ReleaseAsset(
+                    name=SHA256SUMS_NAME,
+                    download_url=f"https://github.com/{self.repo}/releases/download/{tag_name}/{SHA256SUMS_NAME}",
+                ),
+            ]
+        )
+        return ReleaseInfo(
+            version=version,
+            tag_name=tag_name,
+            published_at="",
+            html_url=html_url,
+            body="",
+            assets=assets,
+            is_newer=is_remote_version_newer(self.current_version, version),
+            is_prerelease=False,
+        )
+
+    @staticmethod
+    def _extract_tag_name_from_release_url(url: str) -> str:
+        match = re.search(r"/releases/tag/([^/?#]+)", str(url))
+        if not match:
+            raise ValueError(f"unable to determine release tag from url: {url}")
+        return match.group(1).strip()
+
+    @staticmethod
+    def _is_github_rate_limit_error(exc: Exception) -> bool:
+        response = getattr(exc, "response", None)
+        if response is None:
+            return False
+        if int(getattr(response, "status_code", 0) or 0) != 403:
+            return False
+        message = f"{exc} {getattr(response, 'text', '')}".lower()
+        return "rate limit" in message
 
     @staticmethod
     def _create_session():
