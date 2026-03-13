@@ -72,7 +72,7 @@ steps:
   - step_id: wait_before_handle_first_confirm
     action:
       type: wait
-      duration_ms: 250
+      duration_ms: 500
     next: handle_first_confirm
 
   # Step 3: Handle first confirm popup if present (detect + click)
@@ -95,6 +95,13 @@ steps:
     action:
       type: wait
       duration_ms: 120
+    next: move_first_confirm_mouse_safe_position
+
+  - step_id: move_first_confirm_mouse_safe_position
+    action:
+      type: move
+      x: 535
+      y: 339
     next: verify_first_confirm_disappear
 
   - step_id: verify_first_confirm_disappear

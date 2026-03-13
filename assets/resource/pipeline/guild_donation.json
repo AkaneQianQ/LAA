@@ -64,7 +64,7 @@
         "action": {
             "type": "Wait",
             "param": {
-                "duration_ms": 220
+                "duration_ms": 500
             }
         },
         "next": [
@@ -107,6 +107,21 @@
             "type": "Wait",
             "param": {
                 "duration_ms": 120
+            }
+        },
+        "next": [
+            "move_first_confirm_mouse_safe_position"
+        ]
+    },
+    "move_first_confirm_mouse_safe_position": {
+        "desc": "move_first_confirm_mouse_safe_position",
+        "action": {
+            "type": "Move",
+            "param": {
+                "target": [
+                    535,
+                    339
+                ]
             }
         },
         "next": [
