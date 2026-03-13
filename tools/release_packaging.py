@@ -96,7 +96,7 @@ def package_portable_release(
 def main() -> int:
     parser = argparse.ArgumentParser(description="Create a portable release zip and SHA256SUMS.txt")
     parser.add_argument("--project-root", default=".", help="Project root path")
-    parser.add_argument("--dist-dir", default="dist/FerrumBot", help="PyInstaller dist directory")
+    parser.add_argument("--dist-dir", default="dist/LAA", help="PyInstaller dist directory")
     parser.add_argument("--output-root", default="release", help="Release output directory")
     parser.add_argument("--version-tag", default="", help="Release version tag, e.g. v1.0.04")
     args = parser.parse_args()

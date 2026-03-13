@@ -228,4 +228,4 @@ def test_launcher_spec_does_not_package_makcu_dll():
 
 
 def test_service_version_is_1_0_13():
-    assert service_main.VERSION == "1.0.15"
+    assert service_main.VERSION == "1.0.16"

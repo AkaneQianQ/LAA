@@ -40,9 +40,9 @@ def test_release_packaging_builds_expected_asset_names():
 
 
 def test_release_packaging_creates_zip_and_sha256sum(tmp_path: Path):
-    dist_root = tmp_path / "dist" / "FerrumBot"
+    dist_root = tmp_path / "dist" / "LAA"
     dist_root.mkdir(parents=True)
-    (dist_root / "FerrumBot.exe").write_text("binary", encoding="utf-8")
+    (dist_root / "LAA.exe").write_text("binary", encoding="utf-8")
     (dist_root / "README.txt").write_text("notes", encoding="utf-8")
 
     output_root = tmp_path / "release"
@@ -66,7 +66,7 @@ def test_release_packaging_creates_zip_and_sha256sum(tmp_path: Path):
 
     with zipfile.ZipFile(zip_path) as archive:
         assert sorted(archive.namelist()) == [
-            "LAA-v1.2.3-portable/FerrumBot.exe",
+            "LAA-v1.2.3-portable/LAA.exe",
             "LAA-v1.2.3-portable/README.txt",
         ]
 
@@ -95,9 +95,9 @@ def test_repo_version_sources_are_aligned_to_1_0_13():
     service_main = (repo_root / "agent" / "py_service" / "main.py").read_text(encoding="utf-8")
     interface_json = json.loads((repo_root / "assets" / "interface.json").read_text(encoding="utf-8"))
 
-    assert '__version__ = "1.0.15"' in package_init
-    assert 'VERSION = "1.0.15"' in service_main
-    assert interface_json["version"] == "v1.0.15"
+    assert '__version__ = "1.0.16"' in package_init
+    assert 'VERSION = "1.0.16"' in service_main
+    assert interface_json["version"] == "v1.0.16"
 
 
 def test_pyinstaller_spec_collects_requests_for_update_service():
@@ -105,3 +105,4 @@ def test_pyinstaller_spec_collects_requests_for_update_service():
     spec_text = (repo_root / "FerrumBotLauncher.spec").read_text(encoding="utf-8")
 
     assert 'collect_submodules("requests")' in spec_text
+    assert 'name="LAA"' in spec_text

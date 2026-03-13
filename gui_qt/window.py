@@ -278,7 +278,7 @@ class FerrumMainWindow(QMainWindow):
         self.update_download_succeeded.connect(self._on_update_download_succeeded)
         self.update_download_failed.connect(self._on_update_download_failed)
         self._f10_hotkey_handle = None
-        self.setWindowTitle("FerrumBot")
+        self.setWindowTitle("LAA")
         self.setWindowFlag(Qt.FramelessWindowHint, True)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.resize(1280, 760)

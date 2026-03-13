@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-FerrumBot Service Entry Point
+LAA Service Entry Point
 
 MaaEnd 风格的服务入口，负责：
 1. 加载 interface.json 配置
@@ -40,7 +40,7 @@ except ImportError as e:
     raise
 
 # 版本信息
-VERSION = "1.0.15"
+VERSION = "1.0.16"
 
 
 class ServiceError(Exception):
@@ -280,7 +280,7 @@ def initialize(
         InitializationError: 初始化失败
     """
     print(f"\n{'='*50}")
-    print(f"[服务] 启动 FerrumBot v{VERSION}")
+    print(f"[服务] 启动 LAA v{VERSION}")
     if debug_mode:
         print("[调试] 初始化阶段启用调试日志")
     print(f"{'='*50}\n")
@@ -626,14 +626,14 @@ def run_task(
 def main():
     """命令行入口"""
     parser = argparse.ArgumentParser(
-        prog='FerrumBot',
+        prog='LAA',
         description='Lost Ark 公会捐赠自动化助手 - MaaEnd 风格服务入口'
     )
 
     parser.add_argument(
         '--version', '-v',
         action='version',
-        version=f'FerrumBot {VERSION}'
+        version=f'LAA {VERSION}'
     )
 
     parser.add_argument(

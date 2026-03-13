@@ -20,8 +20,8 @@ def build_application() -> QApplication:
         return app
 
     app = QApplication(sys.argv)
-    app.setApplicationName("FerrumBot")
-    app.setOrganizationName("FerrumBot")
+    app.setApplicationName("LAA")
+    app.setOrganizationName("LAA")
     app.setWindowIcon(load_icon("app.svg"))
     app.setStyleSheet(build_stylesheet())
     return app

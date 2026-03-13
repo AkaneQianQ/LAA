@@ -16,5 +16,5 @@ Set-Location $root
 
 & $PythonExe tools/release_packaging.py `
     --project-root $root `
-    --dist-dir dist/FerrumBot `
+    --dist-dir dist/LAA `
     --output-root release
