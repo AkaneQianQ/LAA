@@ -208,6 +208,11 @@ def probe_controller(
         controller_config,
         build_controller_override(port, baudrate, keyboard_via_python=keyboard_via_python),
     )
+    # Probe should validate serial/hardware reachability only.
+    # Avoid initializing PYDD during MAKCU probe to prevent false failures.
+    if str(driver_backend).lower() == "makcu":
+        merged_config.setdefault("input", {})
+        merged_config["input"]["keyboard_via_python"] = False
     controller = None
     try:
         controller = service_main.create_hardware_controller(merged_config)

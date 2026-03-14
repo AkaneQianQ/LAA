@@ -20,7 +20,8 @@ class LauncherSettings:
     driver_backend: str = DEFAULT_DRIVER_BACKEND
     ports: dict[str, str] = field(default_factory=lambda: {"ferrum": "COM2", "makcu": "COM3"})
     baudrates: dict[str, int] = field(default_factory=lambda: {"ferrum": DEFAULT_BAUDRATE, "makcu": DEFAULT_BAUDRATE})
-    keyboard_via_python: bool = False
+    keyboard_via_python: bool = True
+    force_pydd: bool = True
     update_repo: str = DEFAULT_UPDATE_REPO
     update_proxy: ProxyConfig = field(default_factory=ProxyConfig)
     task_checked: dict[str, bool] = field(default_factory=dict)
@@ -65,7 +66,8 @@ class LauncherSettingsStore:
         task_checked_raw = payload.get("task_checked", {})
         task_visibility_raw = payload.get("task_visibility", {})
         task_order_raw = payload.get("task_order", [])
-        keyboard_via_python = bool(payload.get("keyboard_via_python", False))
+        keyboard_via_python = bool(payload.get("keyboard_via_python", True))
+        force_pydd = bool(payload.get("force_pydd", True))
         update_repo = str(payload.get("update_repo", DEFAULT_UPDATE_REPO)).strip() or DEFAULT_UPDATE_REPO
         if update_repo in LEGACY_UPDATE_REPOS:
             update_repo = DEFAULT_UPDATE_REPO
@@ -84,6 +86,7 @@ class LauncherSettingsStore:
             ports=ports,
             baudrates=baudrates,
             keyboard_via_python=keyboard_via_python,
+            force_pydd=force_pydd,
             update_repo=update_repo,
             update_proxy=self._load_proxy_config(update_proxy_raw),
             task_checked=task_checked,

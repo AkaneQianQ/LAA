@@ -2,7 +2,7 @@
     "interface_version": 1,
     "name": "LAA",
     "description": "Lost Ark 公会捐赠自动化助手 - MaaEnd 结构",
-    "version": "v1.0.16",
+    "version": "v1.0.17",
     "license": "LICENSE",
 
     "controller": [

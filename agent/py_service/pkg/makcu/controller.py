@@ -10,6 +10,12 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 import serial
+try:
+    import win32api
+    WIN32_AVAILABLE = True
+except ImportError:
+    win32api = None
+    WIN32_AVAILABLE = False
 
 
 logger = logging.getLogger(__name__)
@@ -19,6 +25,7 @@ BUTTON_RIGHT = 2
 BUTTON_MIDDLE = 3
 CLICK_POST_DELAY_S = 0.1
 CLICK_DELAY_MS = 50
+PRE_CLICK_SETTLE_S = 0.03
 KEY_DOWN_DELAY_S = 0.012
 KEY_HOLD_MS = 50
 KEY_UP_DELAY_S = 0.008
@@ -75,6 +82,19 @@ MAKCU_KEY_ALIASES = {
 }
 
 MAKCU_MODIFIER_KEYS = {"ctrl", "shift", "alt", "gui", "rctrl", "rshift", "ralt", "rgui"}
+NO_RESPONSE_PREFIXES = (
+    "km.moveto(",
+    "km.move(",
+    "km.silent(",
+    "km.click(",
+    "km.left(",
+    "km.right(",
+    "km.middle(",
+    "km.wheel(",
+    "km.press(",
+    "km.down(",
+    "km.up(",
+)
 
 
 @dataclass
@@ -166,6 +186,11 @@ class MakcuController:
         try:
             logger.info("[Hardware] MAKCU send: %s", command)
             self._serial.write(f"{command}\r\n".encode("utf-8"))
+            # Fire-and-forget commands on some firmware never emit prompt;
+            # skip response wait to avoid 1s timeout penalty per action.
+            if self._is_no_response_command(command):
+                logger.info("[Hardware] MAKCU ack: %s -> <no-wait-no-response-cmd>", command)
+                return ""
             if not wait_response:
                 logger.info("[Hardware] MAKCU ack: %s -> <no-wait>", command)
                 return ""
@@ -173,10 +198,17 @@ class MakcuController:
             logger.info("[Hardware] MAKCU ack: %s -> %s", command, response or "<empty>")
             return response
         except (serial.SerialException, TimeoutError) as exc:
+            if isinstance(exc, TimeoutError) and self._is_no_response_command(command):
+                logger.info("[Hardware] MAKCU ack: %s -> <allowed-empty-timeout>", command)
+                return ""
             if retry:
                 time.sleep(0.05)
                 return self._send_command(command, retry=False, wait_response=wait_response)
             raise MakcuConnectionError(f"Command failed '{command}': {exc}") from exc
+
+    def _is_no_response_command(self, command: str) -> bool:
+        stripped = str(command).strip().lower()
+        return any(stripped.startswith(prefix) for prefix in NO_RESPONSE_PREFIXES)
 
     def _initialize_device(self) -> None:
         if self._serial and self._serial.is_open:
@@ -212,13 +244,30 @@ class MakcuController:
 
     def move_absolute(self, x: int, y: int) -> None:
         self._validate_connection()
-        self._send_command(f"km.moveto({int(x)},{int(y)})")
+        target_x = int(x)
+        target_y = int(y)
+        # Some MAKCU firmware builds are unreliable with moveto().
+        # Prefer relative move derived from current cursor position when possible.
+        if WIN32_AVAILABLE:
+            try:
+                cur_x, cur_y = win32api.GetCursorPos()
+                dx = int(target_x - cur_x)
+                dy = int(target_y - cur_y)
+                self._send_command(f"km.move({dx},{dy})")
+                return
+            except Exception:
+                pass
+        self._send_command(f"km.moveto({target_x},{target_y})")
 
     def _click_button(self, button: int) -> None:
         self._validate_connection()
         if button not in {BUTTON_LEFT, BUTTON_RIGHT, BUTTON_MIDDLE}:
             raise ValueError(f"unsupported mouse button: {button}")
-        self._send_command(f"km.click({int(button)},1,{CLICK_DELAY_MS})")
+        # Use explicit down/up sequence for broader MAKCU firmware compatibility.
+        button_name = {BUTTON_LEFT: "left", BUTTON_RIGHT: "right", BUTTON_MIDDLE: "middle"}[button]
+        self._send_command(f"km.{button_name}(1)")
+        time.sleep(CLICK_DELAY_MS / 1000.0)
+        self._send_command(f"km.{button_name}(0)")
         time.sleep(CLICK_POST_DELAY_S)
 
     def click(self, x: int, y: int) -> None:
@@ -229,8 +278,10 @@ class MakcuController:
 
     def move_and_click(self, x: int, y: int) -> None:
         self._validate_connection()
-        self._send_command(f"km.silent({int(x)},{int(y)})")
-        time.sleep(CLICK_POST_DELAY_S)
+        # Keep the same stable absolute move path used elsewhere, then click.
+        self.move_absolute(int(x), int(y))
+        time.sleep(PRE_CLICK_SETTLE_S)
+        self._click_button(BUTTON_LEFT)
 
     def click_right(self, x: int, y: int) -> None:
         self.move_absolute(x, y)

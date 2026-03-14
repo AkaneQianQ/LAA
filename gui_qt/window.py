@@ -255,7 +255,13 @@ class FerrumMainWindow(QMainWindow):
         self.interface_config = self.bridge.load_interface()
         self.ports = dict(self.settings.ports)
         self.baudrates = dict(getattr(self.settings, "baudrates", {}) or {"ferrum": 115200, "makcu": 115200})
-        self.keyboard_via_python = bool(getattr(self.settings, "keyboard_via_python", False))
+        self.keyboard_via_python = bool(getattr(self.settings, "keyboard_via_python", True))
+        self.force_pydd = bool(getattr(self.settings, "force_pydd", True))
+        # Keyboard backend selection is now exclusive: Python keyboard vs PYDD.
+        # Default to PYDD when legacy settings are ambiguous.
+        if not self.keyboard_via_python and not self.force_pydd:
+            self.force_pydd = True
+            self.keyboard_via_python = True
         self.update_repo = str(getattr(self.settings, "update_repo", "") or "")
         self.update_proxy = getattr(self.settings, "update_proxy", ProxyConfig())
         self.current_backend = self.settings.driver_backend
@@ -318,6 +324,7 @@ class FerrumMainWindow(QMainWindow):
             app.installEventFilter(self)
         self._bind_bridge_signals()
         self._register_global_hotkeys()
+        self._apply_keyboard_env_flags()
 
     def _restore_task_queue_state(self) -> None:
         checked_map = dict(getattr(self.settings, "task_checked", {}) or {})
@@ -605,9 +612,15 @@ class FerrumMainWindow(QMainWindow):
         baudrate_row.addWidget(self.baudrate_entry, 1)
         driver_layout.addLayout(baudrate_row)
 
-        self.keyboard_path_checkbox = QCheckBox("键盘链路走 Python", driver_panel)
+        keyboard_row = QHBoxLayout()
+        self.keyboard_path_checkbox = QCheckBox("Python 键盘", driver_panel)
         self.keyboard_path_checkbox.toggled.connect(self._on_keyboard_path_toggled)
-        driver_layout.addWidget(self.keyboard_path_checkbox)
+        self.force_pydd_checkbox = QCheckBox("PYDD", driver_panel)
+        self.force_pydd_checkbox.toggled.connect(self._on_force_pydd_toggled)
+        keyboard_row.addWidget(self.keyboard_path_checkbox)
+        keyboard_row.addWidget(self.force_pydd_checkbox)
+        keyboard_row.addStretch(1)
+        driver_layout.addLayout(keyboard_row)
 
         self.settings_status_label = QLabel("选择驱动并探测连接状态。", driver_panel)
         self.settings_status_label.setObjectName("contentHint")
@@ -889,6 +902,9 @@ class FerrumMainWindow(QMainWindow):
         if hasattr(self, "keyboard_path_checkbox"):
             is_makcu = backend == "makcu"
             self.keyboard_path_checkbox.setHidden(not is_makcu)
+        if hasattr(self, "force_pydd_checkbox"):
+            is_makcu = backend == "makcu"
+            self.force_pydd_checkbox.setHidden(not is_makcu)
         self.driver_value.setText(backend.upper())
         self._persist_settings()
 
@@ -904,9 +920,14 @@ class FerrumMainWindow(QMainWindow):
             self.baudrate_entry.setText(str(self._baudrate_for_backend(backend)))
         if hasattr(self, "keyboard_path_checkbox"):
             self.keyboard_path_checkbox.blockSignals(True)
-            self.keyboard_path_checkbox.setChecked(self.keyboard_via_python)
+            self.keyboard_path_checkbox.setChecked(not self.force_pydd)
             self.keyboard_path_checkbox.setHidden(backend != "makcu")
             self.keyboard_path_checkbox.blockSignals(False)
+        if hasattr(self, "force_pydd_checkbox"):
+            self.force_pydd_checkbox.blockSignals(True)
+            self.force_pydd_checkbox.setChecked(self.force_pydd)
+            self.force_pydd_checkbox.setHidden(backend != "makcu")
+            self.force_pydd_checkbox.blockSignals(False)
         self.driver_value.setText(backend.upper())
         if persist:
             self._persist_settings()
@@ -932,11 +953,13 @@ class FerrumMainWindow(QMainWindow):
                 password=self.update_proxy_password_entry.text(),
             )
             self.update_proxy_port_entry.setText("" if self.update_proxy.port <= 0 else str(self.update_proxy.port))
+        self._apply_keyboard_env_flags()
         self._save_bridge_settings(
             self.current_backend,
             dict(self.ports),
             dict(self.baudrates),
             keyboard_via_python=self.keyboard_via_python,
+            force_pydd=self.force_pydd,
             update_repo=self.update_repo,
             update_proxy=self.update_proxy,
             task_checked=self._task_checked_state(),
@@ -1033,6 +1056,7 @@ class FerrumMainWindow(QMainWindow):
         legacy_kwargs.pop("update_proxy", None)
         bare_kwargs = dict(legacy_kwargs)
         bare_kwargs.pop("keyboard_via_python", None)
+        bare_kwargs.pop("force_pydd", None)
         try:
             self.bridge.save_settings(driver_backend, ports, baudrates, **kwargs)
         except TypeError:
@@ -1239,8 +1263,41 @@ class FerrumMainWindow(QMainWindow):
                 self.bridge.start_task(task_name, controller_name, port)
 
     def _on_keyboard_path_toggled(self, checked: bool) -> None:
-        self.keyboard_via_python = bool(checked)
+        if not checked:
+            # Keep one option always selected; PYDD is default fallback.
+            self.force_pydd = True
+            if hasattr(self, "force_pydd_checkbox"):
+                self.force_pydd_checkbox.blockSignals(True)
+                self.force_pydd_checkbox.setChecked(True)
+                self.force_pydd_checkbox.blockSignals(False)
+        else:
+            self.force_pydd = False
+            if hasattr(self, "force_pydd_checkbox"):
+                self.force_pydd_checkbox.blockSignals(True)
+                self.force_pydd_checkbox.setChecked(False)
+                self.force_pydd_checkbox.blockSignals(False)
+        self.keyboard_via_python = True
         self._persist_settings()
+
+    def _on_force_pydd_toggled(self, checked: bool) -> None:
+        if checked:
+            self.force_pydd = True
+            if hasattr(self, "keyboard_path_checkbox"):
+                self.keyboard_path_checkbox.blockSignals(True)
+                self.keyboard_path_checkbox.setChecked(False)
+                self.keyboard_path_checkbox.blockSignals(False)
+        else:
+            # Keep one option always selected.
+            self.force_pydd = False
+            if hasattr(self, "keyboard_path_checkbox"):
+                self.keyboard_path_checkbox.blockSignals(True)
+                self.keyboard_path_checkbox.setChecked(True)
+                self.keyboard_path_checkbox.blockSignals(False)
+        self.keyboard_via_python = True
+        self._persist_settings()
+
+    def _apply_keyboard_env_flags(self) -> None:
+        os.environ["LAA_FORCE_PYDD"] = "1" if self.force_pydd else "0"
 
     def _set_busy(self, busy: bool) -> None:
         self.start_button.setEnabled(True)

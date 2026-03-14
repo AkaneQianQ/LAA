@@ -40,7 +40,7 @@ except ImportError as e:
     raise
 
 # 版本信息
-VERSION = "1.0.16"
+VERSION = "1.0.17"
 
 
 class ServiceError(Exception):
@@ -241,7 +241,9 @@ def create_hardware_controller(controller_config: Dict[str, Any]):
     serial_config = controller_config.get("serial", {})
     driver = str(controller_config.get("driver", "ferrum")).lower()
     input_config = controller_config.get("input", {})
-    keyboard_via_python = bool(input_config.get("keyboard_via_python", False))
+    # MAKCU firmware compatibility varies; default to Python keyboard path unless explicitly disabled.
+    keyboard_via_python_default = True if driver == "makcu" else False
+    keyboard_via_python = bool(input_config.get("keyboard_via_python", keyboard_via_python_default))
 
     controller_cls = FerrumController
     if driver == "makcu":

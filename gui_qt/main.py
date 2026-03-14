@@ -22,6 +22,11 @@ def build_application() -> QApplication:
     app = QApplication(sys.argv)
     app.setApplicationName("LAA")
     app.setOrganizationName("LAA")
+    # Guard against invalid platform font metadata (pointSize == -1) on some hosts.
+    default_font = app.font()
+    if default_font.pointSize() <= 0:
+        default_font.setPointSize(10)
+        app.setFont(default_font)
     app.setWindowIcon(load_icon("app.svg"))
     app.setStyleSheet(build_stylesheet())
     return app

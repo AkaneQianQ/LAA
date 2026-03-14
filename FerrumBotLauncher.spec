@@ -12,6 +12,8 @@ assets_datas = [(str(project_root / "assets"), "assets")]
 data_datas = [(str(project_root / "data"), "data")] if (project_root / "data").exists() else []
 agent_datas = collect_data_files("agent", include_py_files=True)
 gui_qt_datas = [(str(project_root / "gui_qt" / "theme" / "assets"), "gui_qt/theme/assets")]
+dd_driver_path = project_root / "agent" / "py_service" / "pkg" / "input" / "drivers" / "dd.54900.dll"
+dd_driver_datas = [(str(dd_driver_path), "agent/py_service/pkg/input/drivers")] if dd_driver_path.exists() else []
 
 
 def _find_site_package_file(*relative_parts: str) -> Path:
@@ -47,7 +49,7 @@ a = Analysis(
     ["gui_launcher.py"],
     pathex=[str(project_root)],
     binaries=pywin32_binaries,
-    datas=assets_datas + data_datas + agent_datas + gui_qt_datas,
+    datas=assets_datas + data_datas + agent_datas + gui_qt_datas + dd_driver_datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
