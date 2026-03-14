@@ -980,6 +980,7 @@ class FerrumMainWindow(QMainWindow):
             port,
             baudrate,
             keyboard_via_python=self.keyboard_via_python,
+            force_pydd=self.force_pydd,
         )
 
     def _toggle_trigger(self) -> None:
@@ -996,6 +997,7 @@ class FerrumMainWindow(QMainWindow):
             port,
             baudrate,
             keyboard_via_python=self.keyboard_via_python,
+            force_pydd=self.force_pydd,
         )
 
     def _open_settings_tab(self) -> None:
@@ -1026,6 +1028,7 @@ class FerrumMainWindow(QMainWindow):
             port,
             baudrate,
             keyboard_via_python=self.keyboard_via_python,
+            force_pydd=self.force_pydd,
         )
 
     def _baudrate_for_backend(self, backend: str) -> int:
@@ -1068,18 +1071,48 @@ class FerrumMainWindow(QMainWindow):
                 except TypeError:
                     self.bridge.save_settings(driver_backend, ports, **bare_kwargs)
 
-    def _bridge_probe(self, interface_config: dict, driver_backend: str, port: str, baudrate: int, keyboard_via_python: bool = False) -> None:
+    def _bridge_probe(
+        self,
+        interface_config: dict,
+        driver_backend: str,
+        port: str,
+        baudrate: int,
+        keyboard_via_python: bool = False,
+        force_pydd: bool | None = None,
+    ) -> None:
         try:
-            self.bridge.probe(interface_config, driver_backend, port, baudrate, keyboard_via_python)
+            self.bridge.probe(
+                interface_config,
+                driver_backend,
+                port,
+                baudrate,
+                keyboard_via_python,
+                force_pydd,
+            )
         except TypeError:
             try:
                 self.bridge.probe(interface_config, driver_backend, port, baudrate)
             except TypeError:
                 self.bridge.probe(interface_config, driver_backend, port)
 
-    def _bridge_start_trigger(self, interface_config: dict, driver_backend: str, port: str, baudrate: int, keyboard_via_python: bool = False) -> None:
+    def _bridge_start_trigger(
+        self,
+        interface_config: dict,
+        driver_backend: str,
+        port: str,
+        baudrate: int,
+        keyboard_via_python: bool = False,
+        force_pydd: bool | None = None,
+    ) -> None:
         try:
-            self.bridge.start_trigger(interface_config, driver_backend, port, baudrate, keyboard_via_python)
+            self.bridge.start_trigger(
+                interface_config,
+                driver_backend,
+                port,
+                baudrate,
+                keyboard_via_python,
+                force_pydd,
+            )
         except TypeError:
             try:
                 self.bridge.start_trigger(interface_config, driver_backend, port, baudrate)
@@ -1253,9 +1286,10 @@ class FerrumMainWindow(QMainWindow):
         port: str,
         baudrate: int,
         keyboard_via_python: bool = False,
+        force_pydd: bool | None = None,
     ) -> None:
         try:
-            self.bridge.start_task(task_name, controller_name, port, baudrate, keyboard_via_python)
+            self.bridge.start_task(task_name, controller_name, port, baudrate, keyboard_via_python, force_pydd)
         except TypeError:
             try:
                 self.bridge.start_task(task_name, controller_name, port, baudrate)

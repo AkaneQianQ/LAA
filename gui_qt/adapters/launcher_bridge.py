@@ -160,6 +160,7 @@ class LauncherBridge(QObject):
         port: str | None = None,
         baudrate: int | None = None,
         keyboard_via_python: bool = False,
+        force_pydd: bool | None = None,
     ) -> None:
         if self.is_busy():
             raise RuntimeError("launcher bridge is busy")
@@ -171,6 +172,8 @@ class LauncherBridge(QObject):
         def worker() -> None:
             success = False
             try:
+                if force_pydd is not None:
+                    os.environ["LAA_FORCE_PYDD"] = "1" if bool(force_pydd) else "0"
                 focus_result = self._focus_executor()
                 if focus_result.ok:
                     self._sleep(1.0)
@@ -226,8 +229,11 @@ class LauncherBridge(QObject):
         port: str,
         baudrate: int | None = None,
         keyboard_via_python: bool = False,
+        force_pydd: bool | None = None,
     ) -> None:
         def worker() -> None:
+            if force_pydd is not None:
+                os.environ["LAA_FORCE_PYDD"] = "1" if bool(force_pydd) else "0"
             try:
                 result = self._probe_executor(interface_config, driver_backend, port, baudrate, keyboard_via_python)
             except TypeError:
@@ -243,6 +249,7 @@ class LauncherBridge(QObject):
         port: str,
         baudrate: int | None = None,
         keyboard_via_python: bool = False,
+        force_pydd: bool | None = None,
     ) -> None:
         if self.is_busy():
             raise RuntimeError("launcher bridge is busy")
@@ -253,6 +260,8 @@ class LauncherBridge(QObject):
 
         def worker() -> None:
             try:
+                if force_pydd is not None:
+                    os.environ["LAA_FORCE_PYDD"] = "1" if bool(force_pydd) else "0"
                 try:
                     self._trigger_executor(
                         interface_config=interface_config,
@@ -260,6 +269,7 @@ class LauncherBridge(QObject):
                         port=port,
                         baudrate=baudrate,
                         keyboard_via_python=keyboard_via_python,
+                        force_pydd=force_pydd,
                         stop_event=self._trigger_stop_event,
                         log_writer=self.log_emitted.emit,
                     )

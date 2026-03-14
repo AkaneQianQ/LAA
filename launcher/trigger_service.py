@@ -179,11 +179,14 @@ def run_independent_trigger(
     baudrate: int | None,
     stop_event: Event,
     keyboard_via_python: bool = False,
+    force_pydd: bool | None = None,
     config: Optional[dict] = None,
     log_writer: Optional[Callable[[str], None]] = None,
 ) -> None:
     """Long-running trigger loop for independent launcher usage."""
     os.chdir(project_root := service_main.project_root)
+    if force_pydd is not None:
+        os.environ["LAA_FORCE_PYDD"] = "1" if bool(force_pydd) else "0"
     config = resolve_trigger_config_paths(config or DEFAULT_TRIGGER_CONFIG)
 
     def writer(message: str) -> None:

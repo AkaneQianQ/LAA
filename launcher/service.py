@@ -171,9 +171,11 @@ def build_controller_override(
     serial = {"port": str(port)}
     if baudrate is not None:
         serial["baudrate"] = int(baudrate)
-    override = {"serial": serial}
-    if keyboard_via_python:
-        override["input"] = {"keyboard_via_python": True}
+    override = {
+        "serial": serial,
+        # Keep runtime controller input route fully aligned with launcher settings.
+        "input": {"keyboard_via_python": bool(keyboard_via_python)},
+    }
     return override
 
 
