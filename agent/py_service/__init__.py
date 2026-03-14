@@ -7,4 +7,4 @@ This is the main agent module providing automation capabilities
 for Lost Ark guild donation workflows.
 """
 
-__version__ = "1.0.18"
+__version__ = "1.0.21"
