@@ -28,7 +28,7 @@ jobs:
 
       - name: Build portable package
         shell: pwsh
-        run: .\build_launcher.ps1 -PythonExe python
+        run: .\build_launcher.ps1 -PythonExe python -VersionTag "${{ github.ref_name }}"
 
       - name: Validate release assets
         shell: pwsh

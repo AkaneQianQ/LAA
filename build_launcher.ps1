@@ -1,5 +1,6 @@
 param(
-    [string]$PythonExe = "python"
+    [string]$PythonExe = "python",
+    [string]$VersionTag = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -14,7 +15,15 @@ Set-Location $root
     --clean `
     FerrumBotLauncher.spec
 
-& $PythonExe tools/release_packaging.py `
-    --project-root $root `
-    --dist-dir dist/LAA `
-    --output-root release
+if ([string]::IsNullOrWhiteSpace($VersionTag)) {
+    & $PythonExe tools/release_packaging.py `
+        --project-root $root `
+        --dist-dir dist/LAA `
+        --output-root release
+} else {
+    & $PythonExe tools/release_packaging.py `
+        --project-root $root `
+        --dist-dir dist/LAA `
+        --output-root release `
+        --version-tag $VersionTag
+}
