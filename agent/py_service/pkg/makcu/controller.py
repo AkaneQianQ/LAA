@@ -26,6 +26,7 @@ BUTTON_MIDDLE = 3
 CLICK_POST_DELAY_S = 0.1
 CLICK_DELAY_MS = 50
 PRE_CLICK_SETTLE_S = 0.03
+PRE_CLICK_DELAY_S = 0.1
 KEY_DOWN_DELAY_S = 0.012
 KEY_HOLD_MS = 50
 KEY_UP_DELAY_S = 0.008
@@ -263,11 +264,10 @@ class MakcuController:
         self._validate_connection()
         if button not in {BUTTON_LEFT, BUTTON_RIGHT, BUTTON_MIDDLE}:
             raise ValueError(f"unsupported mouse button: {button}")
-        # Use explicit down/up sequence for broader MAKCU firmware compatibility.
-        button_name = {BUTTON_LEFT: "left", BUTTON_RIGHT: "right", BUTTON_MIDDLE: "middle"}[button]
-        self._send_command(f"km.{button_name}(1)")
-        time.sleep(CLICK_DELAY_MS / 1000.0)
-        self._send_command(f"km.{button_name}(0)")
+        time.sleep(PRE_CLICK_DELAY_S)
+        # Align with the proven minimal smoke test command shape:
+        # km.click(button, count, interval_ms)
+        self._send_command(f"km.click({button},1,{CLICK_DELAY_MS})")
         time.sleep(CLICK_POST_DELAY_S)
 
     def click(self, x: int, y: int) -> None:
