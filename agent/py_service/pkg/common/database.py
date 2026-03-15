@@ -13,7 +13,28 @@ Schema:
 import sqlite3
 import os
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timedelta
+
+DONATION_RESET_HOUR = 6
+
+
+def _now_local() -> datetime:
+    """Return current local datetime. Kept as wrapper for test monkeypatching."""
+    return datetime.now()
+
+
+def _current_game_day_str(now: Optional[datetime] = None) -> str:
+    """
+    Return game-day date string with 06:00 reset boundary.
+
+    Example:
+        2026-03-15 00:30 -> "2026-03-14"
+        2026-03-15 06:00 -> "2026-03-15"
+    """
+    current = now or _now_local()
+    if current.hour < DONATION_RESET_HOUR:
+        current = current - timedelta(days=1)
+    return current.strftime('%Y-%m-%d')
 
 
 # =============================================================================
@@ -615,7 +636,7 @@ def mark_character_done(db_path: str, slot_index: int, character_name: str = Non
     Returns:
         True if successful, False on error
     """
-    today = datetime.now().strftime('%Y-%m-%d')
+    today = _current_game_day_str()
 
     conn = sqlite3.connect(db_path, timeout=5.0)
     try:
@@ -656,7 +677,7 @@ def is_character_done_today(db_path: str, slot_index: int) -> bool:
     Returns:
         True if character completed donation today, False otherwise
     """
-    today = datetime.now().strftime('%Y-%m-%d')
+    today = _current_game_day_str()
 
     conn = sqlite3.connect(db_path, timeout=5.0)
     try:
@@ -703,7 +724,7 @@ def mark_account_character_done(
     Returns:
         True if successful, False otherwise
     """
-    today = datetime.now().strftime('%Y-%m-%d')
+    today = _current_game_day_str()
 
     conn = sqlite3.connect(db_path, timeout=5.0)
     try:
@@ -746,7 +767,7 @@ def is_account_character_done_today(db_path: str, account_id: int, slot_index: i
     Returns:
         True if done today, False otherwise
     """
-    today = datetime.now().strftime('%Y-%m-%d')
+    today = _current_game_day_str()
 
     conn = sqlite3.connect(db_path, timeout=5.0)
     try:
@@ -832,7 +853,7 @@ def get_account_progress_summary(db_path: str) -> Dict[str, Any]:
     Returns:
         Dictionary with summary statistics
     """
-    today = datetime.now().strftime('%Y-%m-%d')
+    today = _current_game_day_str()
 
     conn = sqlite3.connect(db_path, timeout=5.0)
     try:

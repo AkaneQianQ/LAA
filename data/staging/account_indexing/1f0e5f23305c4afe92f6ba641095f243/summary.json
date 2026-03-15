@@ -1,0 +1,31 @@
+{
+  "session_id": "1f0e5f23305c4afe92f6ba641095f243",
+  "account_hash": "f702e91e24e8932538c31d01e93d3a552e97803872e597c4bfbfabd567d16d30",
+  "character_count_switchable": 20,
+  "character_count_total": 21,
+  "staging_dir": "data\\staging\\account_indexing\\1f0e5f23305c4afe92f6ba641095f243",
+  "characters_dir": "data\\staging\\account_indexing\\1f0e5f23305c4afe92f6ba641095f243\\characters",
+  "tag_path": "data\\staging\\account_indexing\\1f0e5f23305c4afe92f6ba641095f243\\account_tag.png",
+  "character_paths": [
+    "data\\staging\\account_indexing\\1f0e5f23305c4afe92f6ba641095f243\\characters\\1.png",
+    "data\\staging\\account_indexing\\1f0e5f23305c4afe92f6ba641095f243\\characters\\2.png",
+    "data\\staging\\account_indexing\\1f0e5f23305c4afe92f6ba641095f243\\characters\\3.png",
+    "data\\staging\\account_indexing\\1f0e5f23305c4afe92f6ba641095f243\\characters\\4.png",
+    "data\\staging\\account_indexing\\1f0e5f23305c4afe92f6ba641095f243\\characters\\5.png",
+    "data\\staging\\account_indexing\\1f0e5f23305c4afe92f6ba641095f243\\characters\\6.png",
+    "data\\staging\\account_indexing\\1f0e5f23305c4afe92f6ba641095f243\\characters\\7.png",
+    "data\\staging\\account_indexing\\1f0e5f23305c4afe92f6ba641095f243\\characters\\8.png",
+    "data\\staging\\account_indexing\\1f0e5f23305c4afe92f6ba641095f243\\characters\\9.png",
+    "data\\staging\\account_indexing\\1f0e5f23305c4afe92f6ba641095f243\\characters\\10.png",
+    "data\\staging\\account_indexing\\1f0e5f23305c4afe92f6ba641095f243\\characters\\11.png",
+    "data\\staging\\account_indexing\\1f0e5f23305c4afe92f6ba641095f243\\characters\\12.png",
+    "data\\staging\\account_indexing\\1f0e5f23305c4afe92f6ba641095f243\\characters\\13.png",
+    "data\\staging\\account_indexing\\1f0e5f23305c4afe92f6ba641095f243\\characters\\14.png",
+    "data\\staging\\account_indexing\\1f0e5f23305c4afe92f6ba641095f243\\characters\\15.png",
+    "data\\staging\\account_indexing\\1f0e5f23305c4afe92f6ba641095f243\\characters\\16.png",
+    "data\\staging\\account_indexing\\1f0e5f23305c4afe92f6ba641095f243\\characters\\17.png",
+    "data\\staging\\account_indexing\\1f0e5f23305c4afe92f6ba641095f243\\characters\\18.png",
+    "data\\staging\\account_indexing\\1f0e5f23305c4afe92f6ba641095f243\\characters\\19.png",
+    "data\\staging\\account_indexing\\1f0e5f23305c4afe92f6ba641095f243\\characters\\20.png"
+  ]
+}

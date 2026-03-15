@@ -151,7 +151,7 @@ steps:
         login_template: assets/resource/image/loginButton.bmp
         login_roi: [1308, 912, 1441, 948]
         confirm_template: assets/resource/image/ConfirmButton2.bmp
-        confirm_roi: [1176, 776, 1278, 812]
+        confirm_roi: [1176, 700, 1278, 1100]
         load_pixel_x: 973
         load_pixel_y: 1146
         load_pixel_rgb: [148, 12, 8]

@@ -238,9 +238,9 @@
                 "confirm_template": "assets/resource/image/ConfirmButton2.bmp",
                 "confirm_roi": [
                     1176,
-                    776,
+                    700,
                     1278,
-                    812
+                    1100
                 ],
                 "load_pixel_x": 973,
                 "load_pixel_y": 1146,

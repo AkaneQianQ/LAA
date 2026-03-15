@@ -1631,7 +1631,7 @@ def process_remaining_donations(context: dict):
     login_template = str(param.get("login_template", "assets/resource/image/loginButton.bmp"))
     login_roi = tuple(param.get("login_roi", [1308, 912, 1441, 948]))
     confirm_template = str(param.get("confirm_template", "assets/resource/image/ConfirmButton2.bmp"))
-    confirm_roi = tuple(param.get("confirm_roi", [1176, 776, 1278, 812]))
+    confirm_roi = tuple(param.get("confirm_roi", [1176, 700, 1278, 1100]))
 
     safe_x = int(param.get("safe_x", 1689))
     safe_y = int(param.get("safe_y", 698))
@@ -1992,13 +1992,18 @@ def process_remaining_donations(context: dict):
                 poll_interval_ms=poll_interval_ms,
             )
             if confirm_ok and confirm_box is not None:
-                _click_box_shrink(
+                cx, cy = _click_box_center(
                     hardware,
                     confirm_box,
-                    shrink_percent=0.10,
                     template_path=confirm_template,
                     fallback_roi=confirm_roi,
-            )
+                    jitter=0,
+                    pre_click_delay_ms=150,
+                )
+                _log(
+                    f"confirm detected -> click detected-box center ({cx}, {cy}) "
+                    f"with pre_delay_ms=150"
+                )
 
             if not wait_world_color_ready():
                 _log(f"[ERROR] world-load color not detected for slot_index={int(next_target_index)}")

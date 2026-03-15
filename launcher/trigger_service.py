@@ -49,6 +49,7 @@ DEFAULT_TRIGGER_CONFIG = {
 TRIGGER_MATCH_STABILIZE_S = 0.15
 TRIGGER_MOVE_SETTLE_S = 0.05
 TRIGGER_ENTER_SETTLE_S = 0.05
+TASK_A_STEP_DELAY_S = 0.15
 
 
 def append_trigger_log(message: str) -> None:
@@ -112,9 +113,9 @@ def press_task_a_sequence(hardware_controller) -> str:
     # HybridMakcuController routes keyboard through PythonKeyboardController.
     if hasattr(hardware_controller, "_keyboard"):
         hardware_controller.press("9")
-        time.sleep(0.05)
+        time.sleep(TASK_A_STEP_DELAY_S)
         hardware_controller.press("9")
-        time.sleep(0.05)
+        time.sleep(TASK_A_STEP_DELAY_S)
         hardware_controller.press("enter")
         return "windows_9_9_enter"
 

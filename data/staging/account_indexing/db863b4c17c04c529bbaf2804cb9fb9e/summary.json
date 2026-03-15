@@ -1,0 +1,31 @@
+{
+  "session_id": "db863b4c17c04c529bbaf2804cb9fb9e",
+  "account_hash": "09308e5eb42800cb839acb749200f7326e0dff376b05239300b782a8c538a0f0",
+  "character_count_switchable": 20,
+  "character_count_total": 21,
+  "staging_dir": "data\\staging\\account_indexing\\db863b4c17c04c529bbaf2804cb9fb9e",
+  "characters_dir": "data\\staging\\account_indexing\\db863b4c17c04c529bbaf2804cb9fb9e\\characters",
+  "tag_path": "data\\staging\\account_indexing\\db863b4c17c04c529bbaf2804cb9fb9e\\account_tag.png",
+  "character_paths": [
+    "data\\staging\\account_indexing\\db863b4c17c04c529bbaf2804cb9fb9e\\characters\\1.png",
+    "data\\staging\\account_indexing\\db863b4c17c04c529bbaf2804cb9fb9e\\characters\\2.png",
+    "data\\staging\\account_indexing\\db863b4c17c04c529bbaf2804cb9fb9e\\characters\\3.png",
+    "data\\staging\\account_indexing\\db863b4c17c04c529bbaf2804cb9fb9e\\characters\\4.png",
+    "data\\staging\\account_indexing\\db863b4c17c04c529bbaf2804cb9fb9e\\characters\\5.png",
+    "data\\staging\\account_indexing\\db863b4c17c04c529bbaf2804cb9fb9e\\characters\\6.png",
+    "data\\staging\\account_indexing\\db863b4c17c04c529bbaf2804cb9fb9e\\characters\\7.png",
+    "data\\staging\\account_indexing\\db863b4c17c04c529bbaf2804cb9fb9e\\characters\\8.png",
+    "data\\staging\\account_indexing\\db863b4c17c04c529bbaf2804cb9fb9e\\characters\\9.png",
+    "data\\staging\\account_indexing\\db863b4c17c04c529bbaf2804cb9fb9e\\characters\\10.png",
+    "data\\staging\\account_indexing\\db863b4c17c04c529bbaf2804cb9fb9e\\characters\\11.png",
+    "data\\staging\\account_indexing\\db863b4c17c04c529bbaf2804cb9fb9e\\characters\\12.png",
+    "data\\staging\\account_indexing\\db863b4c17c04c529bbaf2804cb9fb9e\\characters\\13.png",
+    "data\\staging\\account_indexing\\db863b4c17c04c529bbaf2804cb9fb9e\\characters\\14.png",
+    "data\\staging\\account_indexing\\db863b4c17c04c529bbaf2804cb9fb9e\\characters\\15.png",
+    "data\\staging\\account_indexing\\db863b4c17c04c529bbaf2804cb9fb9e\\characters\\16.png",
+    "data\\staging\\account_indexing\\db863b4c17c04c529bbaf2804cb9fb9e\\characters\\17.png",
+    "data\\staging\\account_indexing\\db863b4c17c04c529bbaf2804cb9fb9e\\characters\\18.png",
+    "data\\staging\\account_indexing\\db863b4c17c04c529bbaf2804cb9fb9e\\characters\\19.png",
+    "data\\staging\\account_indexing\\db863b4c17c04c529bbaf2804cb9fb9e\\characters\\20.png"
+  ]
+}
