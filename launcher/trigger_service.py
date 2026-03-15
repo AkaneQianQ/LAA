@@ -102,12 +102,28 @@ def get_template_center_point(template_path: str, match_top_left: tuple[int, int
     return int(match_top_left[0] + (width / 2)), int(match_top_left[1] + (height / 2))
 
 
-def press_up_up_down(hardware_controller) -> None:
+def press_task_a_sequence(hardware_controller) -> str:
+    """
+    Execute TASK_A key sequence by input path.
+
+    - Windows keyboard route (HybridMakcuController._keyboard): 9, 9, enter
+    - Ferrum/native route: keep legacy up, up, down
+    """
+    # HybridMakcuController routes keyboard through PythonKeyboardController.
+    if hasattr(hardware_controller, "_keyboard"):
+        hardware_controller.press("9")
+        time.sleep(0.05)
+        hardware_controller.press("9")
+        time.sleep(0.05)
+        hardware_controller.press("enter")
+        return "windows_9_9_enter"
+
     hardware_controller.press("up")
     time.sleep(0.05)
     hardware_controller.press("up")
     time.sleep(0.05)
     hardware_controller.press("down")
+    return "ferrum_up_up_down"
 
 
 def execute_offset_clicks(
@@ -145,7 +161,8 @@ def run_trigger_cycle(
     )
     if matched:
         writer(f"[Trigger] Task A matched at {box}")
-        press_up_up_down(hardware_controller)
+        sequence_name = press_task_a_sequence(hardware_controller)
+        writer(f"[Trigger] Task A key sequence: {sequence_name}")
         time.sleep(float(config["TASK_A"].get("COOLDOWN", 0.3)))
         return True
 
