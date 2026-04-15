@@ -325,6 +325,7 @@ class FerrumMainWindow(QMainWindow):
         self._bind_bridge_signals()
         self._register_global_hotkeys()
         self._apply_keyboard_env_flags()
+        self._bootstrap_backend_service()
 
     def _restore_task_queue_state(self) -> None:
         checked_map = dict(getattr(self.settings, "task_checked", {}) or {})
@@ -1333,6 +1334,24 @@ class FerrumMainWindow(QMainWindow):
     def _apply_keyboard_env_flags(self) -> None:
         os.environ["LAA_FORCE_PYDD"] = "1" if self.force_pydd else "0"
 
+    def _bootstrap_backend_service(self) -> None:
+        if str(self.current_backend).lower() != "ferrum":
+            return
+
+        def worker() -> None:
+            try:
+                result = self.bridge.ensure_ferrum_backend_service()
+                if result.get("error"):
+                    self._append_log(f"[Launcher] ferrum backend bootstrap: {result['error']}")
+                elif result.get("started_by_us"):
+                    self._append_log("[Launcher] ferrum backend-service started at GUI startup")
+                elif result.get("existed_before"):
+                    self._append_log("[Launcher] ferrum backend-service already running at GUI startup")
+            except Exception as exc:
+                self._append_log(f"[Launcher] ferrum backend bootstrap failed: {exc}")
+
+        threading.Thread(target=worker, name="qt-launcher-backend-bootstrap", daemon=True).start()
+
     def _set_busy(self, busy: bool) -> None:
         self.start_button.setEnabled(True)
         self.start_button.setText("运行中..." if busy else "Link Start!")
@@ -1654,4 +1673,11 @@ class FerrumMainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         self._unregister_global_hotkeys()
+        try:
+            if self.bridge.is_busy():
+                self.bridge.stop_task()
+                self.bridge.stop_trigger()
+            self.bridge.shutdown()
+        except Exception as exc:
+            self._append_log(f"[Launcher] shutdown cleanup failed: {exc}")
         super().closeEvent(event)
