@@ -6,13 +6,14 @@ from __future__ import annotations
 
 import ctypes
 import ctypes.wintypes
+import json
 import os
 import sys
 import threading
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QPoint, Property, QEasingCurve, QPropertyAnimation, QRect, Qt, Signal
-from PySide6.QtGui import QColor, QCursor, QEnterEvent, QMouseEvent, QPaintEvent, QPainter
+from PySide6.QtGui import QColor, QCursor, QEnterEvent, QMouseEvent, QPaintEvent, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -22,6 +23,8 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QMenu,
+    QListWidget,
+    QListWidgetItem,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
@@ -218,6 +221,84 @@ class TaskRowWidget(QWidget):
         self.hover_animation.setStartValue(self._hover_strength)
         self.hover_animation.setEndValue(target)
         self.hover_animation.start()
+
+
+class AccountIndexingCharacterItemWidget(QWidget):
+    def __init__(self, parent_window: "FerrumMainWindow", file_name: str, path: str, display_index: int, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.parent_window = parent_window
+        self.file_name = file_name
+        self.path = path
+        self.setObjectName("taskRow")
+
+        self.setFixedSize(170, 200)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+
+        self.thumbnail_label = QLabel(self)
+        self.thumbnail_label.setFixedSize(154, 124)
+        self.thumbnail_label.setObjectName("contentHint")
+        self.thumbnail_label.setAlignment(Qt.AlignCenter)
+        self._set_thumbnail(path)
+
+        text_box = QVBoxLayout()
+        text_box.setContentsMargins(0, 0, 0, 0)
+        text_box.setSpacing(4)
+        self.index_label = QLabel(self)
+        self.index_label.setObjectName("taskMeta")
+        self.name_label = QLabel(self)
+        self.name_label.setObjectName("contentInfo")
+        self.name_label.setText(file_name)
+        text_box.addWidget(self.index_label)
+        text_box.addWidget(self.name_label)
+
+        self.delete_button = AnimatedButton("删除", self)
+        self.delete_button.setObjectName("miniButton")
+        self.delete_button.clicked.connect(self._delete_self)
+
+        layout.addWidget(self.thumbnail_label, 0, Qt.AlignCenter)
+        layout.addLayout(text_box, 0)
+        layout.addWidget(self.delete_button, 0)
+        self.set_display_index(display_index)
+
+    def _set_thumbnail(self, path: str) -> None:
+        pixmap = QPixmap(path)
+        if not pixmap.isNull():
+            self.thumbnail_label.setPixmap(pixmap.scaled(154, 124, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        else:
+            self.thumbnail_label.setText("N/A")
+
+    def set_display_index(self, display_index: int) -> None:
+        self.index_label.setText(f"编号：{display_index}")
+
+    def _delete_self(self) -> None:
+        self.parent_window._remove_account_indexing_character_item(self)
+
+
+class AccountIndexingCharacterList(QListWidget):
+    def __init__(self, parent_window: "FerrumMainWindow", parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.parent_window = parent_window
+        self.setObjectName("contentPanel")
+        self.setDragDropMode(QListWidget.InternalMove)
+        self.setDefaultDropAction(Qt.MoveAction)
+        self.setSelectionMode(QListWidget.SingleSelection)
+        self.setViewMode(QListWidget.IconMode)
+        self.setFlow(QListWidget.LeftToRight)
+        self.setWrapping(True)
+        self.setResizeMode(QListWidget.Adjust)
+        self.setSpacing(10)
+        self.setMovement(QListWidget.Snap)
+        self.setUniformItemSizes(True)
+        self.setVerticalScrollMode(QListWidget.ScrollPerPixel)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setMinimumHeight(320)
+
+    def dropEvent(self, event) -> None:
+        super().dropEvent(event)
+        self.parent_window._sync_account_indexing_character_order()
 
 
 class TaskListContainer(QWidget):
@@ -461,6 +542,7 @@ class FerrumMainWindow(QMainWindow):
         result_layout.setSpacing(10)
         self.account_indexing_count_label = QLabel("本次角色总数：-", self.account_indexing_result_card)
         self.account_indexing_count_label.setObjectName("contentInfo")
+        self.account_indexing_character_list = AccountIndexingCharacterList(self, self.account_indexing_result_card)
         result_actions = QHBoxLayout()
         result_actions.setContentsMargins(0, 0, 0, 0)
         result_actions.setSpacing(8)
@@ -474,6 +556,7 @@ class FerrumMainWindow(QMainWindow):
         result_actions.addWidget(self.account_indexing_save_button)
         result_actions.addWidget(self.account_indexing_discard_button)
         result_layout.addWidget(self.account_indexing_count_label)
+        result_layout.addWidget(self.account_indexing_character_list)
         result_layout.addLayout(result_actions)
         self.account_indexing_result_card.hide()
         self.pending_account_indexing_result: dict | None = None
@@ -1608,12 +1691,67 @@ class FerrumMainWindow(QMainWindow):
         self.pending_account_indexing_result = dict(summary)
         total = int(summary.get("character_count_total", 0))
         self.account_indexing_count_label.setText(f"本次角色总数：{total}")
+        self._refresh_account_indexing_character_list()
         self._update_config_panel()
 
     def _clear_account_indexing_staged_result(self) -> None:
         self.pending_account_indexing_result = None
         self.account_indexing_count_label.setText("本次角色总数：-")
+        self.account_indexing_character_list.clear()
         self._update_config_panel()
+
+    def _refresh_account_indexing_character_list(self) -> None:
+        self.account_indexing_character_list.blockSignals(True)
+        self.account_indexing_character_list.clear()
+        summary = self.pending_account_indexing_result or {}
+        character_paths = list(summary.get("character_paths", []))
+        for index, path in enumerate(character_paths, start=1):
+            file_name = Path(str(path)).name
+            item = QListWidgetItem()
+            widget = AccountIndexingCharacterItemWidget(self, file_name, str(path), index, self.account_indexing_character_list)
+            item.setSizeHint(widget.sizeHint())
+            self.account_indexing_character_list.addItem(item)
+            self.account_indexing_character_list.setItemWidget(item, widget)
+        self.account_indexing_character_list.blockSignals(False)
+
+    def _sync_account_indexing_character_order(self) -> None:
+        summary = self.pending_account_indexing_result or {}
+        if not summary:
+            return
+        reordered: list[str] = []
+        for row in range(self.account_indexing_character_list.count()):
+            item = self.account_indexing_character_list.item(row)
+            widget = self.account_indexing_character_list.itemWidget(item)
+            if widget is None:
+                continue
+            reordered.append(str(widget.path))
+        summary["character_paths"] = reordered
+        summary["character_count_total"] = len(reordered) + 1
+        self.pending_account_indexing_result = summary
+        self.account_indexing_count_label.setText(f"本次角色总数：{len(reordered) + 1}")
+        for row in range(self.account_indexing_character_list.count()):
+            item = self.account_indexing_character_list.item(row)
+            widget = self.account_indexing_character_list.itemWidget(item)
+            if widget is not None:
+                widget.set_display_index(row + 1)
+
+    def _remove_account_indexing_character_item(self, widget: AccountIndexingCharacterItemWidget) -> None:
+        summary = self.pending_account_indexing_result or {}
+        if not summary:
+            return
+        remaining: list[str] = []
+        for row in range(self.account_indexing_character_list.count()):
+            item = self.account_indexing_character_list.item(row)
+            item_widget = self.account_indexing_character_list.itemWidget(item)
+            if item_widget is widget:
+                continue
+            if item_widget is not None:
+                remaining.append(str(item_widget.path))
+        summary["character_paths"] = remaining
+        summary["character_count_total"] = len(remaining) + 1
+        self.pending_account_indexing_result = summary
+        self.account_indexing_count_label.setText(f"本次角色总数：{len(remaining) + 1}")
+        self._refresh_account_indexing_character_list()
 
     def _open_account_indexing_characters_dir(self) -> None:
         summary = self.pending_account_indexing_result or {}
@@ -1633,6 +1771,12 @@ class FerrumMainWindow(QMainWindow):
             self._append_log("[Launcher] missing staged account indexing session")
             return
         try:
+            self._sync_account_indexing_character_order()
+            summary = self.pending_account_indexing_result or {}
+            staging_dir = str(summary.get("staging_dir", "")).strip()
+            if staging_dir:
+                summary_path = Path(staging_dir) / "summary.json"
+                summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
             self.bridge.save_account_indexing_staging(session_id)
         except Exception as exc:
             self._append_log(f"[Launcher] save account indexing staging failed: {exc}")
