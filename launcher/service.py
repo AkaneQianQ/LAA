@@ -11,6 +11,7 @@ import io
 import os
 import json
 import shutil
+import subprocess
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from pathlib import Path
@@ -149,6 +150,26 @@ def focus_lostark_window(process_name: str = "LOSTARK.exe") -> FocusWindowResult
             return FocusWindowResult(False, f"failed to focus {process_name}: {exc}")
 
     return FocusWindowResult(False, f"no visible window found for {process_name}")
+
+
+def terminate_backend_service(process_name: str = "ferrum-backend-service.exe") -> None:
+    try:
+        startupinfo = None
+        creationflags = 0
+        if os.name == "nt":
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        subprocess.run(
+            ["taskkill", "/IM", process_name, "/T", "/F"],
+            check=False,
+            capture_output=True,
+            text=True,
+            startupinfo=startupinfo,
+            creationflags=creationflags,
+        )
+    except Exception:
+        pass
 
 
 def resolve_controller_name(interface_config: Dict[str, Any], driver_backend: str) -> str:

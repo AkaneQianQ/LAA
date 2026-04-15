@@ -43,7 +43,7 @@ from gui_qt.adapters.launcher_bridge import LauncherBridge
 from gui_qt.theme import load_icon
 from gui_qt.titlebar import LauncherTitleBar
 from gui_qt.widgets import AnimatedButton, AnimatedTabWidget, BackendToggleButton
-from launcher.service import resolve_controller_name
+from launcher.service import resolve_controller_name, terminate_backend_service
 from launcher.update_service import ProxyConfig
 from agent.py_service import __version__ as APP_VERSION
 
@@ -1798,4 +1798,11 @@ class FerrumMainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         self._unregister_global_hotkeys()
+        try:
+            self.bridge.stop_trigger()
+            self.bridge.stop_task()
+            self.bridge.wait_for_idle(timeout=1.0)
+            terminate_backend_service()
+        except Exception:
+            pass
         super().closeEvent(event)
