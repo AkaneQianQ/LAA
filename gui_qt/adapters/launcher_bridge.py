@@ -22,6 +22,7 @@ from launcher.service import (
     run_selected_task,
     save_account_indexing_staging,
 )
+from launcher.backend_service import BackendServiceManager
 from launcher.settings import LauncherSettings, LauncherSettingsStore
 from launcher.trigger_service import run_independent_trigger
 from launcher.update_service import GitHubUpdateService, ProxyConfig, download_and_apply_release, validate_release_metadata
@@ -92,7 +93,12 @@ class LauncherBridge(QObject):
     account_indexing_staged = Signal(dict)
     update_download_progress = Signal(int, int, int)
 
-    def __init__(self, settings_path: Path | None = None, parent: QObject | None = None) -> None:
+    def __init__(
+        self,
+        settings_path: Path | None = None,
+        parent: QObject | None = None,
+        backend_service_manager: BackendServiceManager | None = None,
+    ) -> None:
         super().__init__(parent)
         resolved_settings_path = ensure_settings_migrated(Path(settings_path) if settings_path is not None else default_settings_path())
         self._settings_store = LauncherSettingsStore(resolved_settings_path)
@@ -107,6 +113,7 @@ class LauncherBridge(QObject):
         self._focus_executor = focus_lostark_window
         self._probe_executor = probe_controller
         self._trigger_executor = run_independent_trigger
+        self._backend_service = backend_service_manager or BackendServiceManager()
         self._update_checker = self._default_check_for_updates
         self._update_downloader = self._default_download_and_apply_update
 
@@ -141,9 +148,28 @@ class LauncherBridge(QObject):
                 task_order=list(task_order if task_order is not None else current.task_order),
             )
         )
+        if str(driver_backend).lower() == "ferrum":
+            self.ensure_ferrum_backend_service()
 
     def load_interface(self):
         return load_interface_config(DEFAULT_CONFIG_PATH)
+
+    def ensure_ferrum_backend_service(self) -> dict:
+        state = self._backend_service.ensure_running()
+        error = getattr(state, "error", None)
+        if error:
+            self.log_emitted.emit(f"[Launcher] ferrum backend-service: {error}")
+        return {
+            "existed_before": bool(getattr(state, "existed_before", False)),
+            "started_by_us": bool(getattr(state, "started_by_us", False)),
+            "pid": getattr(state, "pid", None),
+            "started": bool(getattr(state, "started", False)),
+            "error": error,
+            "available": self._backend_service.is_available(),
+        }
+
+    def stop_ferrum_backend_service(self) -> bool:
+        return self._backend_service.stop_if_started_by_us()
 
     def is_busy(self) -> bool:
         with self._busy_lock:
@@ -164,6 +190,9 @@ class LauncherBridge(QObject):
     ) -> None:
         if self.is_busy():
             raise RuntimeError("launcher bridge is busy")
+
+        if str(self._settings_store.load().driver_backend).lower() == "ferrum":
+            self.ensure_ferrum_backend_service()
 
         self._set_busy(True)
         self._task_stop_event = threading.Event()
@@ -235,6 +264,8 @@ class LauncherBridge(QObject):
             if force_pydd is not None:
                 os.environ["LAA_FORCE_PYDD"] = "1" if bool(force_pydd) else "0"
             try:
+                if str(driver_backend).lower() == "ferrum":
+                    self.ensure_ferrum_backend_service()
                 result = self._probe_executor(interface_config, driver_backend, port, baudrate, keyboard_via_python)
             except TypeError:
                 result = self._probe_executor(interface_config, driver_backend, port, baudrate)
@@ -253,6 +284,9 @@ class LauncherBridge(QObject):
     ) -> None:
         if self.is_busy():
             raise RuntimeError("launcher bridge is busy")
+
+        if str(driver_backend).lower() == "ferrum":
+            self.ensure_ferrum_backend_service()
 
         self._set_busy(True)
         self._trigger_stop_event = threading.Event()
@@ -308,6 +342,9 @@ class LauncherBridge(QObject):
                 return
             time.sleep(0.01)
         raise TimeoutError("launcher bridge did not become idle before timeout")
+
+    def shutdown(self) -> None:
+        self.stop_ferrum_backend_service()
 
     def check_for_updates(self, current_version: str) -> dict:
         settings = self._settings_store.load()
